@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PlantCare — Know Your Plants</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <header>
+    <div class="logo">
+      <span class="logo-icon">🌿</span>
+      <span class="logo-text">PlantCare</span>
+    </div>
+    <p class="tagline">Identify any houseplant &amp; build its care calendar</p>
+  </header>
+
+  <main>
+    <!-- ── STEP 1: Identify ── -->
+    <section class="card" id="identify-card">
+      <div class="card-header">
+        <span class="step-badge">01</span>
+        <h2>Identify Your Plant</h2>
+      </div>
+
+      <div class="input-tabs">
+        <button class="tab active" data-tab="name">By Name</button>
+        <button class="tab" data-tab="image">By Photo</button>
+      </div>
+
+      <div class="tab-content" id="tab-name">
+        <div class="field">
+          <label for="plant-name">Plant name</label>
+          <input type="text" id="plant-name" placeholder="e.g. Monstera deliciosa, Pothos, Snake Plant…" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="tab-content hidden" id="tab-image">
+        <div class="drop-zone" id="drop-zone">
+          <div class="drop-inner">
+            <span class="drop-icon">📷</span>
+            <p>Drop a photo here or <label class="file-label" for="file-input">browse</label></p>
+            <p class="drop-hint">JPEG, PNG, WebP · max 10 MB</p>
+          </div>
+          <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" class="sr-only" />
+          <img id="preview-img" class="hidden" alt="Preview" />
+        </div>
+      </div>
+
+      <button class="btn-primary" id="identify-btn">
+        <span class="btn-text">Identify Plant</span>
+        <span class="btn-spinner hidden"></span>
+      </button>
+
+      <div id="identify-error" class="error-msg hidden"></div>
+    </section>
+
+    <!-- ── STEP 2: Care Plan ── -->
+    <section class="card hidden" id="care-card">
+      <div class="card-header">
+        <span class="step-badge">02</span>
+        <h2>Care Plan</h2>
+      </div>
+
+      <div id="plant-hero">
+        <div class="plant-names">
+          <h3 id="plant-common-name"></h3>
+          <p id="plant-scientific-name"></p>
+        </div>
+      </div>
+
+      <p id="plant-summary" class="plant-summary"></p>
+
+      <div class="care-grid" id="care-grid">
+        <!-- populated by JS -->
+      </div>
+
+      <div id="pro-tips-section" class="hidden">
+        <h4 class="section-label">Pro Tips</h4>
+        <ul id="pro-tips-list"></ul>
+      </div>
+
+      <div id="toxicity-section" class="hidden">
+        <div class="toxicity-note">
+          <span>⚠</span>
+          <p id="toxicity-text"></p>
+        </div>
+      </div>
+
+      <!-- Schedule -->
+      <h4 class="section-label">Care Schedule</h4>
+      <div id="schedule-list">
+        <!-- task rows populated by JS -->
+      </div>
+
+      <button class="btn-secondary" id="goto-calendar-btn">
+        Configure &amp; Export Calendar →
+      </button>
+    </section>
+
+    <!-- ── STEP 3: Calendar ── -->
+    <section class="card hidden" id="calendar-card">
+      <div class="card-header">
+        <span class="step-badge">03</span>
+        <h2>Export to Calendar</h2>
+      </div>
+
+      <div class="field">
+        <label for="start-date">Start reminders from</label>
+        <input type="date" id="start-date" />
+      </div>
+
+      <h4 class="section-label">Customize Tasks</h4>
+      <p class="hint-text">Set a task's interval to 0 to exclude it from the calendar.</p>
+      <div id="task-overrides">
+        <!-- populated by JS -->
+      </div>
+
+      <div class="cal-actions">
+        <button class="btn-primary" id="download-ics-btn">
+          ⬇ Download .ics (Apple &amp; Outlook)
+        </button>
+        <button class="btn-secondary" id="google-links-btn">
+          📅 Get Google Calendar Links
+        </button>
+      </div>
+
+      <div id="google-links-output" class="hidden">
+        <h4 class="section-label">Google Calendar Links</h4>
+        <div id="google-links-list"></div>
+      </div>
+
+      <div id="calendar-error" class="error-msg hidden"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Powered by AWS Bedrock · Claude 3 Sonnet · Self-hosted</p>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

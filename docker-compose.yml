@@ -1,0 +1,26 @@
+services:
+  plantcare:
+    build: .
+    image: plantcare:latest
+    container_name: plantcare
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      WEB_DIR: "/app/web"
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+      # Option A: explicit credentials (local dev)
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      # Option B: profile name from mounted ~/.aws
+      AWS_PROFILE: "${AWS_PROFILE:-}"
+    volumes:
+      # Mount your ~/.aws for credential/config file access (Option B)
+      # Comment out if using env-var credentials above
+      - "${HOME}/.aws:/root/.aws:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
