@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/dablotz/plantcare/internal/bedrock"
+	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/handlers"
 	"github.com/dablotz/plantcare/internal/store"
 )
@@ -27,11 +27,11 @@ func main() {
 
 	logger.Info("starting plantcare server", "port", port, "aws_region", region)
 
-	bedrockClient, err := bedrock.New(ctx, region)
-	if err != nil {
-		logger.Error("failed to initialize Bedrock client", "error", err)
-		os.Exit(1)
+	apiKey := envOr("ANTHROPIC_API_KEY", "")
+	if apiKey == "" {
+		logger.Warn("ANTHROPIC_API_KEY not set — plant identification will fail")
 	}
+	aiClient := anthropic.New(apiKey)
 
 	var plantStore store.PlantStore
 	switch storageType := envOr("STORAGE_TYPE", "sqlite"); storageType {
@@ -58,7 +58,7 @@ func main() {
 	}
 
 	h := &handlers.Handler{
-		Bedrock: bedrockClient,
+		Bedrock: aiClient,
 		Store:   plantStore,
 		Logger:  logger,
 	}

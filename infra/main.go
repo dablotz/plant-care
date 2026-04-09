@@ -17,9 +17,10 @@ import (
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		cfg      := config.New(ctx, "")
-		region   := cfg.Require("aws:region")
-		imageTag := cfg.Require("plantcare:imageTag")
+		cfg          := config.New(ctx, "")
+		region       := cfg.Require("aws:region")
+		imageTag     := cfg.Require("plantcare:imageTag")
+		anthropicKey := cfg.RequireSecret("plantcare:anthropicApiKey")
 
 		// ── ECR Repository ───────────────────────────────────────────────────
 		repo, err := ecr.NewRepository(ctx, "plantcare-repo", &ecr.RepositoryArgs{
@@ -69,7 +70,7 @@ func main() {
 			return err
 		}
 
-		// ── IAM: Task Role (app — calls Bedrock + DynamoDB) ─────────────────
+		// ── IAM: Task Role (app — calls DynamoDB) ───────────────────────────
 		taskRoleDoc := `{
   "Version": "2012-10-17",
   "Statement": [{
@@ -88,11 +89,6 @@ func main() {
 			doc := map[string]interface{}{
 				"Version": "2012-10-17",
 				"Statement": []map[string]interface{}{
-					{
-						"Effect":   "Allow",
-						"Action":   "bedrock:InvokeModel",
-						"Resource": "arn:aws:bedrock:*::foundation-model/*",
-					},
 					{
 						"Effect": "Allow",
 						"Action": []string{
@@ -245,10 +241,11 @@ func main() {
 		}
 
 		// ── ECS Task Definition ──────────────────────────────────────────────
-		containerDefs := pulumi.All(repo.RepositoryUrl, logGroup.Name).ApplyT(
+		containerDefs := pulumi.All(repo.RepositoryUrl, logGroup.Name, anthropicKey).ApplyT(
 			func(args []interface{}) (string, error) {
-				repoURL := args[0].(string)
-				lgName  := args[1].(string)
+				repoURL      := args[0].(string)
+				lgName       := args[1].(string)
+				anthropicKey := args[2].(string)
 				defs := []map[string]interface{}{{
 					"name":  "plantcare",
 					"image": fmt.Sprintf("%s:%s", repoURL, imageTag),
@@ -256,11 +253,12 @@ func main() {
 						{"containerPort": 8080, "protocol": "tcp"},
 					},
 					"environment": []map[string]string{
-						{"name": "STORAGE_TYPE",   "value": "dynamodb"},
-						{"name": "DYNAMODB_TABLE", "value": "plantcare-plants"},
-						{"name": "AWS_REGION",     "value": region},
-						{"name": "PORT",           "value": "8080"},
-						{"name": "WEB_DIR",        "value": "/app/web"},
+						{"name": "ANTHROPIC_API_KEY", "value": anthropicKey},
+						{"name": "STORAGE_TYPE",      "value": "dynamodb"},
+						{"name": "DYNAMODB_TABLE",    "value": "plantcare-plants"},
+						{"name": "AWS_REGION",        "value": region},
+						{"name": "PORT",              "value": "8080"},
+						{"name": "WEB_DIR",           "value": "/app/web"},
 					},
 					"logConfiguration": map[string]interface{}{
 						"logDriver": "awslogs",

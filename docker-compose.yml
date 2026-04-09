@@ -9,22 +9,22 @@ services:
     environment:
       PORT: "8080"
       WEB_DIR: "/app/web"
-      AWS_REGION: "${AWS_REGION:-us-east-1}"
-      # Option A: explicit credentials (local dev)
-      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
-      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
-      # Option B: profile name from mounted ~/.aws
-      AWS_PROFILE: "${AWS_PROFILE:-}"
+      # Anthropic API key — required for plant identification
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       # Storage: sqlite for local, dynamodb for cloud
       STORAGE_TYPE: "sqlite"
       SQLITE_PATH: "/data/plantcare.db"
+      # Only needed when STORAGE_TYPE=dynamodb
+      # AWS_REGION: "${AWS_REGION:-us-east-1}"
+      # AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      # AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      # AWS_PROFILE: "${AWS_PROFILE:-}"
     volumes:
-      # Mount your ~/.aws for credential/config file access (Option B)
-      # Comment out if using env-var credentials above
-      - "${HOME}/.aws:/root/.aws:ro"
       # Persistent SQLite data — survives container stop/restart/rebuild.
-      # Only destroyed by: docker-compose down -v  or  docker volume rm plantcare-data
+      # Only destroyed by: docker-compose down -v  or  make docker-down-clean
       - plantcare-data:/data
+      # Uncomment if using STORAGE_TYPE=dynamodb with a named AWS profile
+      # - "${HOME}/.aws:/home/nonroot/.aws:ro"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
       interval: 30s
