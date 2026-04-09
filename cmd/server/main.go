@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/handlers"
 	"github.com/dablotz/plantcare/internal/store"
@@ -34,6 +35,9 @@ func main() {
 	aiClient := anthropic.New(apiKey)
 
 	var plantStore store.PlantStore
+	var s3Client *s3.Client
+	uploadBucket := envOr("UPLOAD_BUCKET", "")
+
 	switch storageType := envOr("STORAGE_TYPE", "sqlite"); storageType {
 	case "sqlite":
 		sqlitePath := envOr("SQLITE_PATH", "/data/plantcare.db")
@@ -53,14 +57,21 @@ func main() {
 		tableName := envOr("DYNAMODB_TABLE", "plantcare-plants")
 		plantStore = store.NewDynamoStore(ctx, cfg, tableName)
 		logger.Info("using DynamoDB store", "table", tableName)
+
+		if uploadBucket != "" {
+			s3Client = s3.NewFromConfig(cfg)
+			logger.Info("S3 image uploads enabled", "bucket", uploadBucket)
+		}
 	default:
 		logger.Warn("unknown STORAGE_TYPE, plant library disabled", "storage_type", storageType)
 	}
 
 	h := &handlers.Handler{
-		Bedrock: aiClient,
-		Store:   plantStore,
-		Logger:  logger,
+		Bedrock:      aiClient,
+		Store:        plantStore,
+		S3Client:     s3Client,
+		UploadBucket: uploadBucket,
+		Logger:       logger,
 	}
 
 	mux := http.NewServeMux()

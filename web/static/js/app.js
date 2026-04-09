@@ -2,6 +2,7 @@
 
 /* ── State ───────────────────────────────────────── */
 let currentPlan = null;
+let imageUploadMode = 'direct'; // 'direct' | 's3', resolved on init
 
 /* ── DOM refs ────────────────────────────────────── */
 const identifyCard   = document.getElementById('identify-card');
@@ -103,12 +104,36 @@ identifyBtn.addEventListener('click', async () => {
   try {
     let plan;
     if (activeTab === 'image') {
-      const formData = new FormData();
-      formData.append('image', imageFile);
-      if (hasName) formData.append('name', plantNameInput.value.trim());
+      if (imageUploadMode === 's3') {
+        // Step 1: get pre-signed PUT URL
+        const urlRes = await fetch(`/api/upload-url?content_type=${encodeURIComponent(imageFile.type || 'image/jpeg')}`);
+        const { upload_url, key } = await handleAPIResponse(urlRes);
 
-      const res = await fetch('/api/identify', { method: 'POST', body: formData });
-      plan = await handleAPIResponse(res);
+        // Step 2: upload directly to S3
+        const putRes = await fetch(upload_url, {
+          method: 'PUT',
+          body: imageFile,
+          headers: { 'Content-Type': imageFile.type || 'image/jpeg' },
+        });
+        if (!putRes.ok) throw new Error(`S3 upload failed: ${putRes.status}`);
+
+        // Step 3: identify using the S3 key
+        const body = { image_s3_key: key };
+        if (hasName) body.name = plantNameInput.value.trim();
+        const res = await fetch('/api/identify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        plan = await handleAPIResponse(res);
+      } else {
+        const formData = new FormData();
+        formData.append('image', imageFile);
+        if (hasName) formData.append('name', plantNameInput.value.trim());
+
+        const res = await fetch('/api/identify', { method: 'POST', body: formData });
+        plan = await handleAPIResponse(res);
+      }
     } else {
       const res = await fetch('/api/identify', {
         method: 'POST',
@@ -448,4 +473,15 @@ function escHtml(str) {
 }
 
 /* ── Init ────────────────────────────────────────── */
-loadLibrary();
+async function init() {
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    if (cfg.image_upload_mode) imageUploadMode = cfg.image_upload_mode;
+  } catch (_) {
+    // keep default 'direct'
+  }
+  loadLibrary();
+}
+
+init();

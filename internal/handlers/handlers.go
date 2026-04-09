@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dablotz/plantcare/internal/calendar"
 	"github.com/dablotz/plantcare/internal/models"
 	"github.com/dablotz/plantcare/internal/store"
@@ -24,9 +26,11 @@ type PlantIdentifier interface {
 
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	Bedrock PlantIdentifier
-	Store   store.PlantStore // nil if storage is not configured
-	Logger  *slog.Logger
+	Bedrock      PlantIdentifier
+	Store        store.PlantStore // nil if storage is not configured
+	S3Client     *s3.Client       // nil if S3 upload not configured
+	UploadBucket string
+	Logger       *slog.Logger
 }
 
 // RegisterRoutes wires up all routes to the provided mux.
@@ -38,10 +42,54 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("GET /api/config",         h.handleConfig)
+	mux.HandleFunc("GET /api/upload-url",     h.handleUploadURL)
 	mux.HandleFunc("POST /api/plants",        h.handleSavePlant)
 	mux.HandleFunc("GET /api/plants",         h.handleListPlants)
 	mux.HandleFunc("GET /api/plants/{id}",    h.handleGetPlant)
 	mux.HandleFunc("DELETE /api/plants/{id}", h.handleDeletePlant)
+}
+
+// handleConfig returns frontend configuration flags.
+func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
+	mode := "direct"
+	if h.S3Client != nil && h.UploadBucket != "" {
+		mode = "s3"
+	}
+	jsonOK(w, map[string]string{"image_upload_mode": mode})
+}
+
+// handleUploadURL returns a pre-signed S3 PUT URL and object key for a direct browser upload.
+// Query param: content_type (e.g. "image/jpeg")
+func (h *Handler) handleUploadURL(w http.ResponseWriter, r *http.Request) {
+	if h.S3Client == nil || h.UploadBucket == "" {
+		jsonError(w, "S3 upload not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	contentType := r.URL.Query().Get("content_type")
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+
+	key := "uploads/" + uuid.New().String()
+
+	presigner := s3.NewPresignClient(h.S3Client)
+	presigned, err := presigner.PresignPutObject(r.Context(), &s3.PutObjectInput{
+		Bucket:      aws.String(h.UploadBucket),
+		Key:         aws.String(key),
+		ContentType: aws.String(contentType),
+	}, s3.WithPresignExpires(15*time.Minute))
+	if err != nil {
+		h.Logger.Error("presign put object", "error", err)
+		jsonError(w, "failed to generate upload URL", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, map[string]string{
+		"upload_url": presigned.URL,
+		"key":        key,
+	})
 }
 
 // handleIdentify accepts either a JSON body with a plant name, or a multipart
@@ -81,6 +129,33 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
+		}
+
+		// Fetch image from S3 if a key was provided instead of inline base64
+		if req.ImageS3Key != "" {
+			if h.S3Client == nil || h.UploadBucket == "" {
+				jsonError(w, "S3 upload not configured", http.StatusServiceUnavailable)
+				return
+			}
+			result, err := h.S3Client.GetObject(r.Context(), &s3.GetObjectInput{
+				Bucket: aws.String(h.UploadBucket),
+				Key:    aws.String(req.ImageS3Key),
+			})
+			if err != nil {
+				h.Logger.Error("get s3 object", "key", req.ImageS3Key, "error", err)
+				jsonError(w, "failed to retrieve uploaded image", http.StatusInternalServerError)
+				return
+			}
+			defer result.Body.Close()
+			data, err := io.ReadAll(result.Body)
+			if err != nil {
+				jsonError(w, "reading image from S3: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			req.ImageBase64 = base64.StdEncoding.EncodeToString(data)
+			if req.ImageMIME == "" && result.ContentType != nil {
+				req.ImageMIME = *result.ContentType
+			}
 		}
 	}
 

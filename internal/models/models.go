@@ -1,11 +1,12 @@
 package models
 
 // PlantIdentifyRequest is the incoming request for plant identification.
-// Either Name or ImageBase64 must be provided.
+// Either Name, ImageBase64, or ImageS3Key must be provided.
 type PlantIdentifyRequest struct {
 	Name         string `json:"name,omitempty"`
 	ImageBase64  string `json:"image_base64,omitempty"`
-	ImageMIME    string `json:"image_mime,omitempty"` // e.g. "image/jpeg"
+	ImageMIME    string `json:"image_mime,omitempty"`   // e.g. "image/jpeg"
+	ImageS3Key   string `json:"image_s3_key,omitempty"` // S3 object key for pre-signed upload flow
 }
 
 // CareScheduleItem represents a single recurring care task.
