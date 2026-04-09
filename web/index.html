@@ -102,9 +102,16 @@
         <!-- task rows populated by JS -->
       </div>
 
-      <button class="btn-secondary" id="goto-calendar-btn">
-        Configure &amp; Export Calendar →
-      </button>
+      <div class="care-actions">
+        <button class="btn-secondary" id="goto-calendar-btn">
+          Configure &amp; Export Calendar →
+        </button>
+        <button class="btn-secondary" id="save-plant-btn">
+          <span class="btn-text">🌿 Save to Library</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+      </div>
+      <div id="save-toast" class="save-toast hidden">Saved to your plant library!</div>
     </section>
 
     <!-- ── STEP 3: Calendar ── -->
@@ -140,6 +147,20 @@
       </div>
 
       <div id="calendar-error" class="error-msg hidden"></div>
+    </section>
+
+    <!-- ── STEP 4: Plant Library ── -->
+    <section class="card" id="library-card">
+      <div class="card-header">
+        <span class="step-badge">04</span>
+        <h2>My Plant Library</h2>
+      </div>
+      <p class="hint-text">Plants you've saved. Click Load to restore a care plan.</p>
+      <div id="library-list">
+        <!-- populated by JS -->
+      </div>
+      <p id="library-empty" class="hint-text hidden">No plants saved yet. Identify a plant and click "Save to Library".</p>
+      <div id="library-error" class="error-msg hidden"></div>
     </section>
   </main>
 

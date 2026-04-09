@@ -13,6 +13,8 @@ import (
 
 	"github.com/dablotz/plantcare/internal/calendar"
 	"github.com/dablotz/plantcare/internal/models"
+	"github.com/dablotz/plantcare/internal/store"
+	"github.com/google/uuid"
 )
 
 // PlantIdentifier is the interface for plant identification backends.
@@ -23,6 +25,7 @@ type PlantIdentifier interface {
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
 	Bedrock PlantIdentifier
+	Store   store.PlantStore // nil if storage is not configured
 	Logger  *slog.Logger
 }
 
@@ -35,6 +38,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+	mux.HandleFunc("POST /api/plants",        h.handleSavePlant)
+	mux.HandleFunc("GET /api/plants",         h.handleListPlants)
+	mux.HandleFunc("GET /api/plants/{id}",    h.handleGetPlant)
+	mux.HandleFunc("DELETE /api/plants/{id}", h.handleDeletePlant)
 }
 
 // handleIdentify accepts either a JSON body with a plant name, or a multipart
@@ -137,6 +144,85 @@ func (h *Handler) handleGoogleLinks(w http.ResponseWriter, r *http.Request) {
 
 	links := calendar.GoogleCalendarLinks(req.CarePlan, startDate, req.TaskOverrides)
 	jsonOK(w, links)
+}
+
+// --- plant library ---
+
+func (h *Handler) handleSavePlant(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
+		jsonError(w, "storage not configured", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		CarePlan models.CarePlan `json:"care_plan"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	entry := store.PlantEntry{
+		ID:        uuid.New().String(),
+		CreatedAt: time.Now().UTC(),
+		CarePlan:  req.CarePlan,
+	}
+	if err := h.Store.SavePlant(r.Context(), entry); err != nil {
+		h.Logger.Error("save plant", "error", err)
+		jsonError(w, "failed to save plant", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(entry)
+}
+
+func (h *Handler) handleListPlants(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
+		jsonError(w, "storage not configured", http.StatusServiceUnavailable)
+		return
+	}
+	entries, err := h.Store.ListPlants(r.Context())
+	if err != nil {
+		h.Logger.Error("list plants", "error", err)
+		jsonError(w, "failed to list plants", http.StatusInternalServerError)
+		return
+	}
+	if entries == nil {
+		entries = []store.PlantEntry{} // return [] not null
+	}
+	jsonOK(w, entries)
+}
+
+func (h *Handler) handleGetPlant(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
+		jsonError(w, "storage not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	entry, err := h.Store.GetPlant(r.Context(), id)
+	if err != nil {
+		h.Logger.Error("get plant", "id", id, "error", err)
+		jsonError(w, "failed to get plant", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil {
+		jsonError(w, "plant not found", http.StatusNotFound)
+		return
+	}
+	jsonOK(w, entry)
+}
+
+func (h *Handler) handleDeletePlant(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
+		jsonError(w, "storage not configured", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	if err := h.Store.DeletePlant(r.Context(), id); err != nil {
+		h.Logger.Error("delete plant", "id", id, "error", err)
+		jsonError(w, "failed to delete plant", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- helpers ---

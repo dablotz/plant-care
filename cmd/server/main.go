@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/dablotz/plantcare/internal/bedrock"
 	"github.com/dablotz/plantcare/internal/handlers"
+	"github.com/dablotz/plantcare/internal/store"
 )
 
 func main() {
@@ -31,8 +33,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	var plantStore store.PlantStore
+	switch storageType := envOr("STORAGE_TYPE", "sqlite"); storageType {
+	case "sqlite":
+		sqlitePath := envOr("SQLITE_PATH", "/data/plantcare.db")
+		s, err := store.NewSQLiteStore(ctx, sqlitePath)
+		if err != nil {
+			logger.Error("failed to initialize SQLite store", "error", err)
+			os.Exit(1)
+		}
+		plantStore = s
+		logger.Info("using SQLite store", "path", sqlitePath)
+	case "dynamodb":
+		cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+		if err != nil {
+			logger.Error("failed to load AWS config for DynamoDB", "error", err)
+			os.Exit(1)
+		}
+		tableName := envOr("DYNAMODB_TABLE", "plantcare-plants")
+		plantStore = store.NewDynamoStore(ctx, cfg, tableName)
+		logger.Info("using DynamoDB store", "table", tableName)
+	default:
+		logger.Warn("unknown STORAGE_TYPE, plant library disabled", "storage_type", storageType)
+	}
+
 	h := &handlers.Handler{
 		Bedrock: bedrockClient,
+		Store:   plantStore,
 		Logger:  logger,
 	}
 

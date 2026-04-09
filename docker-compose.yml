@@ -15,12 +15,21 @@ services:
       AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
       # Option B: profile name from mounted ~/.aws
       AWS_PROFILE: "${AWS_PROFILE:-}"
+      # Storage: sqlite for local, dynamodb for cloud
+      STORAGE_TYPE: "sqlite"
+      SQLITE_PATH: "/data/plantcare.db"
     volumes:
       # Mount your ~/.aws for credential/config file access (Option B)
       # Comment out if using env-var credentials above
       - "${HOME}/.aws:/root/.aws:ro"
+      # Persistent SQLite data — survives container stop/restart/rebuild.
+      # Only destroyed by: docker-compose down -v  or  docker volume rm plantcare-data
+      - plantcare-data:/data
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+volumes:
+  plantcare-data:

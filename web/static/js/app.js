@@ -7,6 +7,11 @@ let currentPlan = null;
 const identifyCard   = document.getElementById('identify-card');
 const careCard       = document.getElementById('care-card');
 const calendarCard   = document.getElementById('calendar-card');
+const libraryList    = document.getElementById('library-list');
+const libraryEmpty   = document.getElementById('library-empty');
+const libraryError   = document.getElementById('library-error');
+const savePlantBtn   = document.getElementById('save-plant-btn');
+const saveToast      = document.getElementById('save-toast');
 
 const tabs           = document.querySelectorAll('.tab');
 const tabName        = document.getElementById('tab-name');
@@ -307,6 +312,106 @@ googleLinksBtn.addEventListener('click', async () => {
   }
 });
 
+/* ── Plant Library ───────────────────────────────── */
+savePlantBtn.addEventListener('click', async () => {
+  if (!currentPlan) return;
+  setLoading(savePlantBtn, true);
+  try {
+    const res = await fetch('/api/plants', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ care_plan: currentPlan }),
+    });
+    await handleAPIResponse(res);
+    showToast();
+    loadLibrary();
+  } catch (err) {
+    // surface the error inline on the care card
+    const errEl = document.getElementById('identify-error');
+    showError(errEl, 'Could not save: ' + err.message);
+  } finally {
+    setLoading(savePlantBtn, false);
+  }
+});
+
+function showToast() {
+  saveToast.classList.remove('hidden');
+  setTimeout(() => saveToast.classList.add('hidden'), 2500);
+}
+
+async function loadLibrary() {
+  hideError(libraryError);
+  try {
+    const res     = await fetch('/api/plants');
+    const entries = await handleAPIResponse(res);
+
+    libraryList.innerHTML = '';
+    if (!entries || entries.length === 0) {
+      libraryEmpty.classList.remove('hidden');
+      return;
+    }
+    libraryEmpty.classList.add('hidden');
+
+    entries.forEach(entry => {
+      const plan = entry.care_plan;
+      const name = plan.common_name || plan.plant_name || 'Unknown plant';
+      const date = new Date(entry.created_at).toLocaleDateString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric',
+      });
+
+      const row = document.createElement('div');
+      row.className = 'library-row';
+      row.innerHTML = `
+        <div class="library-info">
+          <span class="library-name">${escHtml(name)}</span>
+          <span class="library-date">${escHtml(date)}</span>
+        </div>
+        <div class="library-actions">
+          <button class="btn-lib-load" data-id="${escHtml(entry.id)}">Load</button>
+          <button class="btn-lib-delete" data-id="${escHtml(entry.id)}" aria-label="Delete">✕</button>
+        </div>
+      `;
+      libraryList.appendChild(row);
+    });
+
+    libraryList.querySelectorAll('.btn-lib-load').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entry = entries.find(e => e.id === btn.dataset.id);
+        if (!entry) return;
+        currentPlan = entry.care_plan;
+        renderCarePlan(entry.care_plan);
+        careCard.classList.remove('hidden');
+        careCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+
+    libraryList.querySelectorAll('.btn-lib-delete').forEach(btn => {
+      btn.addEventListener('click', () => deletePlant(btn.dataset.id));
+    });
+
+  } catch (err) {
+    // 503 means storage isn't configured — hide the library card silently
+    if (err.message && err.message.includes('storage not configured')) {
+      document.getElementById('library-card').classList.add('hidden');
+    } else {
+      showError(libraryError, 'Could not load library: ' + err.message);
+    }
+  }
+}
+
+async function deletePlant(id) {
+  try {
+    const res = await fetch(`/api/plants/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server error: ${res.status}`);
+    }
+    loadLibrary();
+  } catch (err) {
+    showError(libraryError, 'Could not delete: ' + err.message);
+  }
+}
+
 /* ── Utilities ───────────────────────────────────── */
 async function handleAPIResponse(res) {
   const data = await res.json().catch(() => null);
@@ -341,3 +446,6 @@ function escHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+/* ── Init ────────────────────────────────────────── */
+loadLibrary();

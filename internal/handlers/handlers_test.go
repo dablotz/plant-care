@@ -11,8 +11,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dablotz/plantcare/internal/models"
+	"github.com/dablotz/plantcare/internal/store"
 )
 
 // mockBedrock is a test double for PlantIdentifier.
@@ -25,9 +27,54 @@ func (m *mockBedrock) IdentifyAndPlan(_ context.Context, _ models.PlantIdentifyR
 	return m.plan, m.err
 }
 
+// mockStore is a test double for store.PlantStore.
+type mockStore struct {
+	entries []store.PlantEntry
+	saveErr error
+}
+
+func (m *mockStore) SavePlant(_ context.Context, entry store.PlantEntry) error {
+	if m.saveErr != nil {
+		return m.saveErr
+	}
+	m.entries = append(m.entries, entry)
+	return nil
+}
+func (m *mockStore) ListPlants(_ context.Context) ([]store.PlantEntry, error) {
+	return m.entries, nil
+}
+func (m *mockStore) GetPlant(_ context.Context, id string) (*store.PlantEntry, error) {
+	for i, e := range m.entries {
+		if e.ID == id {
+			return &m.entries[i], nil
+		}
+	}
+	return nil, nil
+}
+func (m *mockStore) DeletePlant(_ context.Context, id string) error {
+	for i, e := range m.entries {
+		if e.ID == id {
+			m.entries = append(m.entries[:i], m.entries[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
 func newTestHandler(mock PlantIdentifier) (*Handler, *http.ServeMux) {
 	h := &Handler{
 		Bedrock: mock,
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+	return h, mux
+}
+
+func newTestHandlerWithStore(mock PlantIdentifier, s store.PlantStore) (*Handler, *http.ServeMux) {
+	h := &Handler{
+		Bedrock: mock,
+		Store:   s,
 		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	mux := http.NewServeMux()
@@ -295,6 +342,113 @@ func TestMimeFromFilename(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("mimeFromFilename(%q) = %q, want %q", tt.filename, got, tt.want)
 		}
+	}
+}
+
+// --- /api/plants ---
+
+func TestHandleSavePlant(t *testing.T) {
+	ms := &mockStore{}
+	_, mux := newTestHandlerWithStore(nil, ms)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"care_plan": models.CarePlan{PlantName: "Monstera"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/plants", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(ms.entries) != 1 {
+		t.Errorf("expected 1 saved entry, got %d", len(ms.entries))
+	}
+}
+
+func TestHandleSavePlant_NoStore(t *testing.T) {
+	_, mux := newTestHandler(nil) // Store is nil
+
+	body, _ := json.Marshal(map[string]interface{}{"care_plan": models.CarePlan{}})
+	req := httptest.NewRequest(http.MethodPost, "/api/plants", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503, got %d", w.Code)
+	}
+}
+
+func TestHandleListPlants_Empty(t *testing.T) {
+	_, mux := newTestHandlerWithStore(nil, &mockStore{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plants", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	var entries []store.PlantEntry
+	json.NewDecoder(w.Body).Decode(&entries)
+	if entries == nil {
+		t.Error("expected empty array [], got null")
+	}
+}
+
+func TestHandleGetPlant_Found(t *testing.T) {
+	ms := &mockStore{
+		entries: []store.PlantEntry{
+			{ID: "abc123", CreatedAt: time.Now(), CarePlan: models.CarePlan{PlantName: "Fern"}},
+		},
+	}
+	_, mux := newTestHandlerWithStore(nil, ms)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plants/abc123", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var entry store.PlantEntry
+	json.NewDecoder(w.Body).Decode(&entry)
+	if entry.ID != "abc123" {
+		t.Errorf("expected ID abc123, got %q", entry.ID)
+	}
+}
+
+func TestHandleGetPlant_NotFound(t *testing.T) {
+	_, mux := newTestHandlerWithStore(nil, &mockStore{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/plants/missing", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestHandleDeletePlant(t *testing.T) {
+	ms := &mockStore{
+		entries: []store.PlantEntry{
+			{ID: "del-me", CreatedAt: time.Now(), CarePlan: models.CarePlan{PlantName: "Cactus"}},
+		},
+	}
+	_, mux := newTestHandlerWithStore(nil, ms)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/plants/del-me", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d", w.Code)
+	}
+	if len(ms.entries) != 0 {
+		t.Errorf("expected entry to be deleted, %d remain", len(ms.entries))
 	}
 }
 

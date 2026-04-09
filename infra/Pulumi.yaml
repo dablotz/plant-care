@@ -1,0 +1,3 @@
+name: plantcare
+runtime: go
+description: PlantCare AWS infrastructure (ECS Fargate + DynamoDB)

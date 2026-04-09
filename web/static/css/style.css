@@ -469,6 +469,87 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   margin-bottom: 1rem;
 }
 
+/* ── Care Actions (save + calendar buttons) ──────────── */
+.care-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* ── Save Toast ──────────────────────────────────────── */
+.save-toast {
+  background: rgba(93,189,122,0.12);
+  border: 1px solid var(--green-dim);
+  border-radius: var(--radius);
+  color: var(--green);
+  font-size: 0.85rem;
+  padding: 0.65rem 1rem;
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+/* ── Plant Library ───────────────────────────────────── */
+.library-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.library-row:last-child { border-bottom: none; }
+
+.library-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+.library-name {
+  font-size: 0.95rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.library-date {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.library-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.btn-lib-load {
+  background: transparent;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  padding: 0.35rem 0.8rem;
+  transition: all 0.2s;
+}
+.btn-lib-load:hover { border-color: var(--green-dim); color: var(--text); }
+
+.btn-lib-delete {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0.35rem 0.6rem;
+  transition: all 0.2s;
+}
+.btn-lib-delete:hover { border-color: rgba(212,96,96,0.4); color: var(--red); }
+
 /* ── Animations ──────────────────────────────── */
 .card {
   animation: fadeSlide 0.4s ease both;
