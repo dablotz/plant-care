@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,14 +11,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dablotz/plantcare/internal/bedrock"
 	"github.com/dablotz/plantcare/internal/calendar"
 	"github.com/dablotz/plantcare/internal/models"
 )
 
+// PlantIdentifier is the interface for plant identification backends.
+type PlantIdentifier interface {
+	IdentifyAndPlan(ctx context.Context, req models.PlantIdentifyRequest) (*models.CarePlan, error)
+}
+
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	Bedrock *bedrock.Client
+	Bedrock PlantIdentifier
 	Logger  *slog.Logger
 }
 
