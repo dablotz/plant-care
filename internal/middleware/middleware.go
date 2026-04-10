@@ -41,10 +41,10 @@ func NewBearerAuth(logger *slog.Logger) func(http.Handler) http.Handler {
 				return
 			}
 			token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !found || token != apiKey {
+			if !found || token != apiKey { //  pragma: allowlist secret
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"unauthorized"}`))
+				_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -101,7 +101,7 @@ func NewRateLimiter(logger *slog.Logger, rps float64, burst int) func(http.Handl
 			if !getLimiter(addrPort.Addr()).Allow() {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":"rate limit exceeded"}`))
+				_, _ = w.Write([]byte(`{"error":"rate limit exceeded"}`))
 				return
 			}
 			next.ServeHTTP(w, r)

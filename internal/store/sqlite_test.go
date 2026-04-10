@@ -14,7 +14,7 @@ func openTestDB(t *testing.T) *SQLiteStore {
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -93,8 +93,12 @@ func TestSQLiteStore_List(t *testing.T) {
 	e2.CarePlan.PlantName = "Pothos"
 	e2.CreatedAt = time.Date(2024, 7, 1, 0, 0, 0, 0, time.UTC) // newer
 
-	s.SavePlant(ctx, e1)
-	s.SavePlant(ctx, e2)
+	if err := s.SavePlant(ctx, e1); err != nil {
+		t.Fatalf("SavePlant e1: %v", err)
+	}
+	if err := s.SavePlant(ctx, e2); err != nil {
+		t.Fatalf("SavePlant e2: %v", err)
+	}
 
 	entries, err = s.ListPlants(ctx)
 	if err != nil {
@@ -114,7 +118,9 @@ func TestSQLiteStore_Delete(t *testing.T) {
 	ctx := context.Background()
 	entry := testEntry()
 
-	s.SavePlant(ctx, entry)
+	if err := s.SavePlant(ctx, entry); err != nil {
+		t.Fatalf("SavePlant: %v", err)
+	}
 
 	if err := s.DeletePlant(ctx, entry.ID); err != nil {
 		t.Fatalf("DeletePlant: %v", err)

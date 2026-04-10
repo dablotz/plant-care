@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck      # unchecked errors
+    - staticcheck   # broad static analysis (includes gosimple)
+    - ineffassign   # assigned but never used
+    - unused        # unused code
+
+  settings:
+    errcheck:
+      check-type-assertions: false

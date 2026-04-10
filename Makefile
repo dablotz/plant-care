@@ -1,4 +1,4 @@
-.PHONY: run build tidy test vet docker-build docker-up docker-down logs run-sqlite infra-preview infra-up docker-push
+.PHONY: run build tidy test vet lint check hooks-install docker-build docker-up docker-down logs run-sqlite infra-preview infra-up docker-push
 
 # Run locally (uses default AWS credential chain)
 run:
@@ -23,6 +23,20 @@ vet:
 # Sync go.sum
 tidy:
 	go mod tidy
+
+# Run golangci-lint
+lint:
+	golangci-lint run
+
+# Run all code quality checks (vet, lint, test) — fast and pre-commit friendly
+check:
+	go vet ./...
+	golangci-lint run
+	go test ./...
+
+# Install pre-commit hooks into .git/hooks/ (run once per clone)
+hooks-install:
+	pre-commit install
 
 # Build Docker image
 docker-build:

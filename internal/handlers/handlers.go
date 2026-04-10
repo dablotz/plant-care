@@ -48,7 +48,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/calendar/google-links", h.handleGoogleLinks)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /api/config",         h.handleConfig)
 	mux.HandleFunc("GET /api/upload-url",     h.handleUploadURL)
@@ -126,7 +126,7 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err == nil {
-			defer file.Close()
+			defer file.Close() //nolint:errcheck
 			data, err := io.ReadAll(file)
 			if err != nil {
 				h.jsonInternalError(w, "failed to read image data", err)
@@ -167,7 +167,7 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 				h.jsonInternalError(w, "failed to retrieve uploaded image", err)
 				return
 			}
-			defer result.Body.Close()
+			defer result.Body.Close() //nolint:errcheck
 			data, err := io.ReadAll(io.LimitReader(result.Body, 15<<20))
 			if err != nil {
 				h.jsonInternalError(w, "failed to read image from S3", err)
@@ -232,7 +232,7 @@ func (h *Handler) handleICS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(ics))
+	_, _ = w.Write([]byte(ics))
 }
 
 // handleGoogleLinks returns a map of task -> Google Calendar URL.
@@ -280,7 +280,7 @@ func (h *Handler) handleSavePlant(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(entry)
+	_ = json.NewEncoder(w).Encode(entry)
 }
 
 func (h *Handler) handleListPlants(w http.ResponseWriter, r *http.Request) {
@@ -337,13 +337,13 @@ func (h *Handler) handleDeletePlant(w http.ResponseWriter, r *http.Request) {
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 // jsonInternalError logs the full error internally and returns a generic message to the client.
@@ -352,7 +352,7 @@ func (h *Handler) jsonInternalError(w http.ResponseWriter, clientMsg string, int
 	h.Logger.Error(clientMsg, "error", internalErr)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
-	json.NewEncoder(w).Encode(map[string]string{"error": clientMsg})
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": clientMsg})
 }
 
 func parseDate(s string) (time.Time, error) {

@@ -95,7 +95,9 @@ func TestHealthHandler(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var body map[string]string
-	json.NewDecoder(w.Body).Decode(&body)
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	if body["status"] != "ok" {
 		t.Errorf(`expected {"status":"ok"}, got %v`, body)
 	}
@@ -211,7 +213,9 @@ func TestHandleGoogleLinks_ValidRequest(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var links map[string]string
-	json.NewDecoder(w.Body).Decode(&links)
+	if err := json.NewDecoder(w.Body).Decode(&links); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	if _, ok := links["Watering"]; !ok {
 		t.Error("expected Watering link in response")
 	}
@@ -256,7 +260,9 @@ func TestHandleIdentify_ValidJSON(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var plan models.CarePlan
-	json.NewDecoder(w.Body).Decode(&plan)
+	if err := json.NewDecoder(w.Body).Decode(&plan); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	if plan.PlantName != "Monstera deliciosa" {
 		t.Errorf("unexpected plant name: %q", plan.PlantName)
 	}
@@ -392,7 +398,9 @@ func TestHandleListPlants_Empty(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 	var entries []store.PlantEntry
-	json.NewDecoder(w.Body).Decode(&entries)
+	if err := json.NewDecoder(w.Body).Decode(&entries); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	if entries == nil {
 		t.Error("expected empty array [], got null")
 	}
@@ -414,7 +422,9 @@ func TestHandleGetPlant_Found(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	var entry store.PlantEntry
-	json.NewDecoder(w.Body).Decode(&entry)
+	if err := json.NewDecoder(w.Body).Decode(&entry); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
 	if entry.ID != "abc123" {
 		t.Errorf("expected ID abc123, got %q", entry.ID)
 	}

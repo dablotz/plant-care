@@ -1,6 +1,6 @@
 # ADR 001: Use Anthropic API directly instead of AWS Bedrock
 
-**Date:** 2026-04-09  
+**Date:** 2026-04-09
 **Status:** Accepted
 
 ---
@@ -47,8 +47,8 @@ The switch is contained to one package (`internal/anthropic/client.go`) because 
 
 ## Alternatives Considered
 
-**Keep Bedrock, fix the credential problem with a long-lived IAM user key**  
+**Keep Bedrock, fix the credential problem with a long-lived IAM user key**
 Would solve the personal expiry issue but keeps the AWS account requirement for self-hosters and doesn't address shareability.
 
-**Keep Bedrock, mandate Fargate deployment (task role handles credentials)**  
+**Keep Bedrock, mandate Fargate deployment (task role handles credentials)**
 Eliminates credential management entirely but requires running infrastructure 24/7 and blocks local-only use cases.

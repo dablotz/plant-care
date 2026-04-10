@@ -26,7 +26,7 @@ func NewSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
 
 	// WAL mode allows concurrent readers while a writer is active.
 	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("setting WAL mode: %w", err)
 	}
 
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS plants (
     care_plan  TEXT NOT NULL
 )`
 	if _, err := db.ExecContext(ctx, schema); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 
@@ -77,7 +77,7 @@ func (s *SQLiteStore) ListPlants(ctx context.Context) ([]PlantEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var entries []PlantEntry
 	for rows.Next() {

@@ -6,7 +6,13 @@
       "Bash(go get:*)",
       "Bash(/usr/local/go/bin/go get:*)",
       "Bash(/usr/local/go/bin/go mod:*)",
-      "Bash(/usr/local/go/bin/go build:*)"
+      "Bash(/usr/local/go/bin/go build:*)",
+      "Bash(detect-secrets scan:*)",
+      "Bash(pre-commit install:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(golangci-lint --version)",
+      "Bash(golangci-lint run:*)",
+      "Bash(golangci-lint help:*)"
     ]
   }
 }
