@@ -1,6 +1,8 @@
 # Binaries
 /bin/
 /plantcare
+bootstrap
+plantcare-lambda.zip
 
 # Environment
 .env

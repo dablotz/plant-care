@@ -12,7 +12,10 @@
       "Bash(pre-commit run:*)",
       "Bash(golangci-lint --version)",
       "Bash(golangci-lint run:*)",
-      "Bash(golangci-lint help:*)"
+      "Bash(golangci-lint help:*)",
+      "Bash(go build:*)",
+      "Bash(make lambda-build:*)",
+      "Bash(make check:*)"
     ]
   }
 }

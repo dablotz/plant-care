@@ -20,8 +20,8 @@ internal/
   store/
     store.go                PlantStore interface + PlantEntry type
     sqlite.go               SQLite backend (local / Docker Compose)
-    dynamo.go               DynamoDB backend (AWS Fargate)
-infra/                      Pulumi IaC — provisions the full AWS Fargate stack
+    dynamo.go               DynamoDB backend (Lambda / cloud deployment)
+infra/                      Pulumi IaC — provisions Lambda + DynamoDB + S3
 web/                        Vanilla HTML/CSS/JS frontend (served by Go)
 Dockerfile                  Multi-stage build → distroless runtime
 docker-compose.yml
@@ -29,9 +29,33 @@ docker-compose.yml
 
 ---
 
+## Security
+
+The app ships with several hardening layers:
+
+- **Bearer token auth** — set `API_KEY` to require `Authorization: Bearer <token>` on all `/api/*` requests. If unset, auth is disabled (dev mode).
+- **Rate limiting** — 10 requests/sec per IP, burst 20, to protect against API cost abuse.
+- **Request body limits** — JSON endpoints capped at 14 MB (identify) or 64 KB (all others).
+- **Content-type allowlist** — image uploads only accept `image/jpeg`, `image/png`, `image/webp`, `image/gif` (validated by magic bytes, not filename).
+- **Input validation** — plant names limited to 200 characters, no control characters.
+- **S3 key prefix enforcement** — image keys must be under `uploads/`.
+- **HTTP security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`, `Referrer-Policy` on every response.
+- **ICS injection prevention** — CRLF sequences stripped from all calendar output.
+
+```bash
+# Run with auth enabled
+export API_KEY=your-secret-token
+make run-sqlite
+
+# Then all API calls need:
+curl -H "Authorization: Bearer your-secret-token" http://localhost:8080/api/health
+```
+
+---
+
 ## Prerequisites
 
-- Go 1.25+
+- Go 1.24+
 - Docker (for containerized deployment)
 - An **Anthropic API key** — create one at [console.anthropic.com](https://console.anthropic.com). The free tier is sufficient for personal use.
 - AWS credentials are **only required** if using `STORAGE_TYPE=dynamodb` (cloud deployment)
@@ -53,6 +77,7 @@ make run-sqlite
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
+export API_KEY=your-secret-token   # optional — enables bearer token auth
 make docker-up
 # → http://localhost:8080
 
@@ -111,7 +136,7 @@ The plant library backend is selected via the `STORAGE_TYPE` environment variabl
 | `STORAGE_TYPE` | Backend | Use case |
 |----------------|---------|----------|
 | `sqlite` (default) | Local SQLite file | Local / Docker Compose |
-| `dynamodb` | AWS DynamoDB | Fargate / cloud |
+| `dynamodb` | AWS DynamoDB | Lambda / cloud |
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -133,6 +158,8 @@ The plant library backend is selected via the `STORAGE_TYPE` environment variabl
 | `GET`  | `/api/plants/{id}` | Get a single saved plant |
 | `DELETE` | `/api/plants/{id}` | Delete a saved plant |
 | `GET`  | `/api/health` | Health check |
+
+If `API_KEY` is set, add `-H "Authorization: Bearer <token>"` to all curl examples below.
 
 ### Example: identify by name
 ```bash
@@ -171,7 +198,7 @@ curl -X POST http://localhost:8080/api/calendar/ics \
 
 ---
 
-## Cloud Deployment (AWS Fargate)
+## Cloud Deployment (AWS Lambda)
 
 Infrastructure is managed with **Pulumi (Go)** in the `infra/` directory.
 
@@ -180,21 +207,34 @@ Infrastructure is managed with **Pulumi (Go)** in the `infra/` directory.
 cd infra
 pulumi config set --secret plantcare:anthropicApiKey sk-ant-...
 
-# 2. Provision AWS infrastructure
+# 2. Build the Lambda zip (Go binary + web/ static files)
+make lambda-build
+
+# 3. Provision AWS infrastructure and deploy initial code
 pulumi stack init dev
 pulumi up --stack dev
-# outputs: albDnsName, ecrRepoUrl
+# outputs: functionUrl, uploadBucket
 
-# 3. Build and push the Docker image
-make docker-push ECR_URL=<ecrRepoUrl> IMAGE_TAG=v1
+# 4. Open the app
+open $(cd infra && pulumi stack output functionUrl --stack dev)
+```
 
-# 4. Deploy the new image
+Provisioned resources: Lambda function + Function URL, DynamoDB table, S3 upload bucket, IAM role, CloudWatch log group.
+
+For subsequent code-only deploys (faster than `pulumi up`):
+```bash
+make lambda-build
+make lambda-deploy
+```
+
+To lock down S3 CORS to your frontend domain once you have one:
+```bash
 cd infra
-pulumi config set plantcare:imageTag v1
+pulumi config set plantcare:frontendOrigin https://your-domain.com
 pulumi up --stack dev
 ```
 
-Provisioned resources: ECR, ECS Fargate cluster, DynamoDB table, ALB, IAM roles, CloudWatch log group.
+> **Note:** The Lambda Function URL serves traffic over HTTPS automatically (AWS-managed certificate on `*.lambda-url.*.on.aws`). If you attach a custom domain, ensure it also uses HTTPS.
 
 ---
 
@@ -210,9 +250,22 @@ Use the model's API name (not the Bedrock cross-region profile ID).
 
 ---
 
+## Development
+
+```bash
+make test          # run unit tests
+make lint          # run golangci-lint
+make check         # vet + lint + test in one pass
+make hooks-install # wire pre-commit hooks (run once per clone)
+```
+
+Pre-commit hooks run automatically on `git commit`: secrets scanning (detect-secrets), go vet, golangci-lint, and go test. The hooks are configured in [.pre-commit-config.yaml](.pre-commit-config.yaml).
+
+---
+
 ## Roadmap ideas
 
-- [ ] Auth (single-token middleware)
 - [ ] Watering log / streak tracking
 - [ ] Push notifications via SNS
+- [ ] HTTPS support on cloud ALB (requires a domain + ACM certificate)
 - [ ] Terraform module for AWS App Runner deployment

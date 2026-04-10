@@ -1,4 +1,4 @@
-.PHONY: run build tidy test vet lint check hooks-install docker-build docker-up docker-down logs run-sqlite infra-preview infra-up docker-push
+.PHONY: run build tidy test vet lint check hooks-install docker-build docker-up docker-down logs run-sqlite infra-preview infra-up lambda-build lambda-deploy
 
 # Run locally (uses default AWS credential chain)
 run:
@@ -66,8 +66,15 @@ infra-preview:
 infra-up:
 	cd infra && pulumi up --stack dev --yes
 
-# Build and push image to ECR
-# Usage: make docker-push ECR_URL=<ecr-repo-url> IMAGE_TAG=<tag>
-docker-push:
-	docker build -t $(ECR_URL):$(IMAGE_TAG) .
-	docker push $(ECR_URL):$(IMAGE_TAG)
+# Build Lambda zip (linux/amd64 binary + web/ directory)
+lambda-build:
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o bootstrap ./cmd/lambda
+	zip -r plantcare-lambda.zip bootstrap web/
+	rm bootstrap
+
+# Deploy updated Lambda code (faster than pulumi up for code-only changes)
+lambda-deploy:
+	aws lambda update-function-code \
+		--function-name plantcare \
+		--zip-file fileb://plantcare-lambda.zip \
+		--region $(shell cd infra && pulumi config get aws:region 2>/dev/null || echo us-east-1)
