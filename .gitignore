@@ -25,3 +25,4 @@ infra/Pulumi.*.yaml
 .idea/
 .vscode/
 *.swp
+.claude
