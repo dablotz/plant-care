@@ -120,7 +120,7 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 		// Optional text name alongside image
 		req.Name = r.FormValue("name")
 
-		file, header, err := r.FormFile("image")
+		file, _, err := r.FormFile("image")
 		if err != nil && err != http.ErrMissingFile {
 			jsonError(w, "reading image file: "+err.Error(), http.StatusBadRequest)
 			return
@@ -132,8 +132,14 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 				h.jsonInternalError(w, "failed to read image data", err)
 				return
 			}
+			// Detect MIME type from file content (magic bytes), not filename extension
+			mimeType := strings.SplitN(http.DetectContentType(data), ";", 2)[0]
+			if !allowedImageTypes[mimeType] {
+				jsonError(w, "unsupported image type", http.StatusBadRequest)
+				return
+			}
+			req.ImageMIME = mimeType
 			req.ImageBase64 = base64.StdEncoding.EncodeToString(data)
-			req.ImageMIME = mimeFromFilename(header.Filename)
 		}
 	} else {
 		// JSON body — limit to 14 MB to accommodate large base64-encoded images
@@ -174,6 +180,13 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Name != "" {
+		if err := validatePlantName(req.Name); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	if req.Name == "" && req.ImageBase64 == "" {
 		jsonError(w, "provide either 'name' or an image upload", http.StatusBadRequest)
 		return
@@ -211,7 +224,11 @@ func (h *Handler) handleICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filename := sanitizeFilename(req.CarePlan.PlantName) + "-care.ics"
+	filename := sanitizeFilename(req.CarePlan.PlantName)
+	if filename == "" {
+		filename = "plant"
+	}
+	filename += "-care.ics"
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
@@ -357,6 +374,18 @@ func mimeFromFilename(name string) string {
 	default:
 		return "image/jpeg"
 	}
+}
+
+func validatePlantName(name string) error {
+	if len(name) > 200 {
+		return fmt.Errorf("plant name too long (max 200 characters)")
+	}
+	for _, r := range name {
+		if r < 0x20 && r != '\t' {
+			return fmt.Errorf("plant name contains invalid characters")
+		}
+	}
+	return nil
 }
 
 func sanitizeFilename(s string) string {

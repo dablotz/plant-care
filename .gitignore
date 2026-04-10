@@ -1,0 +1,25 @@
+# Binaries
+/bin/
+/plantcare
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# Pulumi stack state (may contain encrypted secrets)
+infra/Pulumi.*.yaml
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

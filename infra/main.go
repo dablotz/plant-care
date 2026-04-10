@@ -18,15 +18,16 @@ import (
 
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
-		cfg          := config.New(ctx, "")
-		region       := cfg.Require("aws:region")
-		imageTag     := cfg.Require("plantcare:imageTag")
-		anthropicKey := cfg.RequireSecret("plantcare:anthropicApiKey")
+		cfg            := config.New(ctx, "")
+		region         := cfg.Require("aws:region")
+		imageTag       := cfg.Require("plantcare:imageTag")
+		anthropicKey   := cfg.RequireSecret("plantcare:anthropicApiKey")
+		frontendOrigin := cfg.Get("plantcare:frontendOrigin") // optional; restrict S3 CORS when domain is known
 
 		// ── ECR Repository ───────────────────────────────────────────────────
 		repo, err := ecr.NewRepository(ctx, "plantcare-repo", &ecr.RepositoryArgs{
 			Name:        pulumi.String("plantcare"),
-			ForceDelete: pulumi.Bool(true),
+			ForceDelete: pulumi.Bool(false),
 		})
 		if err != nil {
 			return err
@@ -66,14 +67,21 @@ func main() {
 		if err != nil {
 			return err
 		}
-		// CORS: allow browsers to PUT directly via pre-signed URL
+		// CORS: allow browsers to PUT directly via pre-signed URL.
+		// Restrict AllowedOrigins to the frontend domain when plantcare:frontendOrigin is set.
+		corsOrigins := pulumi.StringArray{pulumi.String("*")}
+		if frontendOrigin != "" {
+			corsOrigins = pulumi.StringArray{pulumi.String(frontendOrigin)}
+		} else {
+			ctx.Log.Warn("plantcare:frontendOrigin not set — S3 CORS allows all origins; set it to your frontend domain to restrict", nil)
+		}
 		_, err = s3.NewBucketCorsConfigurationV2(ctx, "plantcare-uploads-cors", &s3.BucketCorsConfigurationV2Args{
 			Bucket: uploadBucket.Bucket,
 			CorsRules: s3.BucketCorsConfigurationV2CorsRuleArray{
 				&s3.BucketCorsConfigurationV2CorsRuleArgs{
 					AllowedHeaders: pulumi.StringArray{pulumi.String("*")},
 					AllowedMethods: pulumi.StringArray{pulumi.String("PUT")},
-					AllowedOrigins: pulumi.StringArray{pulumi.String("*")},
+					AllowedOrigins: corsOrigins,
 					MaxAgeSeconds:  pulumi.Int(3000),
 				},
 			},

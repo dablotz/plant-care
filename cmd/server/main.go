@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -89,8 +88,11 @@ func main() {
 
 	// Serve static frontend files
 	webDir := envOr("WEB_DIR", "./web")
-	absWebDir, _ := filepath.Abs(webDir)
-	logger.Info("serving frontend", "dir", absWebDir)
+	if _, err := os.Stat(webDir); err != nil {
+		logger.Error("WEB_DIR does not exist or is not accessible", "dir", webDir, "error", err)
+		os.Exit(1)
+	}
+	logger.Info("serving frontend", "dir", webDir)
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
 	// Security headers wrap everything; request logger is outermost

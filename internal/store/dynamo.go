@@ -68,6 +68,7 @@ func (d *DynamoStore) SavePlant(ctx context.Context, entry PlantEntry) error {
 func (d *DynamoStore) ListPlants(ctx context.Context) ([]PlantEntry, error) {
 	out, err := d.client.Scan(ctx, &dynamodb.ScanInput{
 		TableName: aws.String(d.tableName),
+		Limit:     aws.Int32(100),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("scanning DynamoDB table: %w", err)
