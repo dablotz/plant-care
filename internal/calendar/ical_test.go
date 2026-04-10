@@ -19,6 +19,10 @@ func TestEscapeICS(t *testing.T) {
 		{"new\nline", `new\nline`},
 		{`back\slash`, `back\\slash`},
 		{`mix;,` + "\n" + `\`, `mix\;\,\n\\`},
+		// CRLF injection prevention (H-1)
+		{"Monstera\r\nBEGIN:VEVENT", `Monstera\nBEGIN:VEVENT`},
+		{"lone\rcarriage", `lone\ncarriage`},
+		{"crlf\r\nand\nnewline", `crlf\nand\nnewline`},
 	}
 	for _, tt := range tests {
 		got := escapeICS(tt.input)

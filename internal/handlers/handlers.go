@@ -19,6 +19,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// allowedImageTypes is the set of MIME types accepted for image uploads.
+var allowedImageTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+	"image/gif":  true,
+}
+
 // PlantIdentifier is the interface for plant identification backends.
 type PlantIdentifier interface {
 	IdentifyAndPlan(ctx context.Context, req models.PlantIdentifyRequest) (*models.CarePlan, error)
@@ -71,6 +79,10 @@ func (h *Handler) handleUploadURL(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" {
 		contentType = "image/jpeg"
 	}
+	if !allowedImageTypes[contentType] {
+		jsonError(w, "unsupported content_type", http.StatusBadRequest)
+		return
+	}
 
 	key := "uploads/" + uuid.New().String()
 
@@ -81,8 +93,7 @@ func (h *Handler) handleUploadURL(w http.ResponseWriter, r *http.Request) {
 		ContentType: aws.String(contentType),
 	}, s3.WithPresignExpires(15*time.Minute))
 	if err != nil {
-		h.Logger.Error("presign put object", "error", err)
-		jsonError(w, "failed to generate upload URL", http.StatusInternalServerError)
+		h.jsonInternalError(w, "failed to generate upload URL", err)
 		return
 	}
 
@@ -118,14 +129,15 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 			defer file.Close()
 			data, err := io.ReadAll(file)
 			if err != nil {
-				jsonError(w, "reading image data: "+err.Error(), http.StatusInternalServerError)
+				h.jsonInternalError(w, "failed to read image data", err)
 				return
 			}
 			req.ImageBase64 = base64.StdEncoding.EncodeToString(data)
 			req.ImageMIME = mimeFromFilename(header.Filename)
 		}
 	} else {
-		// JSON body
+		// JSON body — limit to 14 MB to accommodate large base64-encoded images
+		r.Body = http.MaxBytesReader(w, r.Body, 14<<20)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 			return
@@ -133,6 +145,10 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 
 		// Fetch image from S3 if a key was provided instead of inline base64
 		if req.ImageS3Key != "" {
+			if !strings.HasPrefix(req.ImageS3Key, "uploads/") {
+				jsonError(w, "invalid image key", http.StatusBadRequest)
+				return
+			}
 			if h.S3Client == nil || h.UploadBucket == "" {
 				jsonError(w, "S3 upload not configured", http.StatusServiceUnavailable)
 				return
@@ -142,14 +158,13 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 				Key:    aws.String(req.ImageS3Key),
 			})
 			if err != nil {
-				h.Logger.Error("get s3 object", "key", req.ImageS3Key, "error", err)
-				jsonError(w, "failed to retrieve uploaded image", http.StatusInternalServerError)
+				h.jsonInternalError(w, "failed to retrieve uploaded image", err)
 				return
 			}
 			defer result.Body.Close()
-			data, err := io.ReadAll(result.Body)
+			data, err := io.ReadAll(io.LimitReader(result.Body, 15<<20))
 			if err != nil {
-				jsonError(w, "reading image from S3: "+err.Error(), http.StatusInternalServerError)
+				h.jsonInternalError(w, "failed to read image from S3", err)
 				return
 			}
 			req.ImageBase64 = base64.StdEncoding.EncodeToString(data)
@@ -164,12 +179,11 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.Logger.Info("identify request", "has_image", req.ImageBase64 != "", "name", req.Name)
+	h.Logger.Info("identify request", "has_image", req.ImageBase64 != "")
 
 	plan, err := h.Bedrock.IdentifyAndPlan(r.Context(), req)
 	if err != nil {
-		h.Logger.Error("bedrock identify", "error", err)
-		jsonError(w, "plant identification failed: "+err.Error(), http.StatusInternalServerError)
+		h.jsonInternalError(w, "plant identification failed", err)
 		return
 	}
 
@@ -178,6 +192,7 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 
 // handleICS generates and serves a .ics calendar file.
 func (h *Handler) handleICS(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	var req models.CalendarRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -192,7 +207,7 @@ func (h *Handler) handleICS(w http.ResponseWriter, r *http.Request) {
 
 	ics, err := calendar.GenerateICS(req.CarePlan, startDate, req.TaskOverrides)
 	if err != nil {
-		jsonError(w, "generating calendar: "+err.Error(), http.StatusInternalServerError)
+		h.jsonInternalError(w, "failed to generate calendar", err)
 		return
 	}
 
@@ -205,6 +220,7 @@ func (h *Handler) handleICS(w http.ResponseWriter, r *http.Request) {
 
 // handleGoogleLinks returns a map of task -> Google Calendar URL.
 func (h *Handler) handleGoogleLinks(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	var req models.CalendarRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
@@ -228,6 +244,7 @@ func (h *Handler) handleSavePlant(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "storage not configured", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	var req struct {
 		CarePlan models.CarePlan `json:"care_plan"`
 	}
@@ -241,8 +258,7 @@ func (h *Handler) handleSavePlant(w http.ResponseWriter, r *http.Request) {
 		CarePlan:  req.CarePlan,
 	}
 	if err := h.Store.SavePlant(r.Context(), entry); err != nil {
-		h.Logger.Error("save plant", "error", err)
-		jsonError(w, "failed to save plant", http.StatusInternalServerError)
+		h.jsonInternalError(w, "failed to save plant", err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -257,8 +273,7 @@ func (h *Handler) handleListPlants(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := h.Store.ListPlants(r.Context())
 	if err != nil {
-		h.Logger.Error("list plants", "error", err)
-		jsonError(w, "failed to list plants", http.StatusInternalServerError)
+		h.jsonInternalError(w, "failed to list plants", err)
 		return
 	}
 	if entries == nil {
@@ -312,6 +327,15 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// jsonInternalError logs the full error internally and returns a generic message to the client.
+// Use this for all 5xx responses — never expose raw error strings to clients.
+func (h *Handler) jsonInternalError(w http.ResponseWriter, clientMsg string, internalErr error) {
+	h.Logger.Error(clientMsg, "error", internalErr)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	json.NewEncoder(w).Encode(map[string]string{"error": clientMsg})
 }
 
 func parseDate(s string) (time.Time, error) {

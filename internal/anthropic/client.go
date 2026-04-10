@@ -110,7 +110,7 @@ frequency_days must be a positive integer (e.g. water every 7 days = 7).`
 
 	var plan models.CarePlan
 	if err := json.Unmarshal([]byte(rawJSON), &plan); err != nil {
-		return nil, fmt.Errorf("parsing care plan JSON from model: %w\nraw response: %s", err, rawJSON)
+		return nil, fmt.Errorf("parsing care plan JSON from model: %w", err)
 	}
 
 	return &plan, nil

@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/handlers"
+	"github.com/dablotz/plantcare/internal/middleware"
 	"github.com/dablotz/plantcare/internal/store"
 )
 
@@ -74,10 +75,17 @@ func main() {
 		Logger:       logger,
 	}
 
-	mux := http.NewServeMux()
+	// API sub-mux: auth + rate limiting applied here only
+	apiMux := http.NewServeMux()
+	h.RegisterRoutes(apiMux)
 
-	// API routes
-	h.RegisterRoutes(mux)
+	auth := middleware.NewBearerAuth(logger)
+	limiter := middleware.NewRateLimiter(logger, 10, 20)
+	apiHandler := limiter(auth(apiMux))
+
+	// Top-level mux: /api/* gets secured handler, / gets static files
+	mux := http.NewServeMux()
+	mux.Handle("/api/", apiHandler)
 
 	// Serve static frontend files
 	webDir := envOr("WEB_DIR", "./web")
@@ -85,8 +93,8 @@ func main() {
 	logger.Info("serving frontend", "dir", absWebDir)
 	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 
-	// Wrap with request logging middleware
-	logged := requestLogger(logger, mux)
+	// Security headers wrap everything; request logger is outermost
+	logged := requestLogger(logger, middleware.SecurityHeaders(mux))
 
 	srv := &http.Server{
 		Addr:         ":" + port,

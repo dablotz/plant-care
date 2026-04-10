@@ -125,11 +125,13 @@ func GoogleCalendarLinks(plan models.CarePlan, startDate time.Time, taskOverride
 	return links
 }
 
-// escapeICS escapes special characters for iCalendar text values.
+// escapeICS escapes special characters for iCalendar text values per RFC 5545.
 func escapeICS(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, ";", `\;`)
 	s = strings.ReplaceAll(s, ",", `\,`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r\n", `\n`) // CRLF pair must come before lone \r and \n
+	s = strings.ReplaceAll(s, "\r", `\n`)   // lone carriage return
+	s = strings.ReplaceAll(s, "\n", `\n`)   // lone newline
 	return s
 }

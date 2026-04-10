@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(go test:*)",
-      "Bash(/usr/local/go/bin/go test:*)"
+      "Bash(/usr/local/go/bin/go test:*)",
+      "Bash(go get:*)",
+      "Bash(/usr/local/go/bin/go get:*)",
+      "Bash(/usr/local/go/bin/go mod:*)",
+      "Bash(/usr/local/go/bin/go build:*)"
     ]
   }
 }

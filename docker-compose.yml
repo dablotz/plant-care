@@ -11,6 +11,8 @@ services:
       WEB_DIR: "/app/web"
       # Anthropic API key — required for plant identification
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      # Bearer token for API authentication (optional — if unset, auth is disabled)
+      API_KEY: "${API_KEY:-}"
       # Storage: sqlite for local, dynamodb for cloud
       STORAGE_TYPE: "sqlite"
       SQLITE_PATH: "/data/plantcare.db"
