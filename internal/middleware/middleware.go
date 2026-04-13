@@ -20,7 +20,11 @@ func SecurityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'")
+			"default-src 'self'; "+
+    		"img-src 'self' data: blob:; "+
+    		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "+
+    		"font-src 'self' https://fonts.gstatic.com; "+
+    		"script-src 'self' 'sha256-ieoeWczDHkReVBsRBqaal5AFMlBtNjMzgwKvLqi/tSU='") // pragma: allowlist secret
 		next.ServeHTTP(w, r)
 	})
 }

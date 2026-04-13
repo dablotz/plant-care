@@ -119,6 +119,7 @@ footer {
 }
 
 .card.hidden { display: none; }
+.hidden { display: none; }
 
 .card-header {
   display: flex;
@@ -251,6 +252,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   text-underline-offset: 2px;
 }
 
+#preview-img.hidden { display: none; }
 #preview-img {
   max-width: 100%;
   max-height: 240px;
@@ -296,6 +298,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .btn-secondary:hover { border-color: var(--green-dim); color: var(--text); }
 
 /* ── Spinner ──────────────────────────────── */
+.btn-spinner.hidden { display: none; }
 .btn-spinner {
   width: 16px; height: 16px;
   border: 2px solid rgba(13,20,16,0.3);
@@ -453,6 +456,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .gcal-link:hover { border-color: var(--green-dim); background: var(--green-glow); }
 
 /* ── Errors ──────────────────────────────── */
+.error-msg.hidden { display: none; }
 .error-msg {
   background: rgba(212,96,96,0.08);
   border: 1px solid rgba(212,96,96,0.25);
@@ -463,6 +467,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   margin-top: 0.75rem;
 }
 
+.hint-text.hidden { display: none; }
 .hint-text {
   font-size: 0.82rem;
   color: var(--text-dim);
@@ -478,6 +483,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 /* ── Save Toast ──────────────────────────────────────── */
+.save-toast.hidden { display: none; }
 .save-toast {
   background: rgba(93,189,122,0.12);
   border: 1px solid var(--green-dim);
