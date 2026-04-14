@@ -177,7 +177,7 @@ func main() {
 			MemorySize: pulumi.Int(256),
 			Environment: &lambda.FunctionEnvironmentArgs{
 				Variables: pulumi.StringMap{
-					"ANTHROPIC_API_KEY": anthropicKey,
+					"ANTHROPIC_API_KEY": anthropicKey, // pragma: allowlist secret
 					"STORAGE_TYPE":      pulumi.String("dynamodb"),
 					"DYNAMODB_TABLE":    pulumi.String("plantcare-plants"),
 					"UPLOAD_BUCKET":     uploadBucket.Bucket,

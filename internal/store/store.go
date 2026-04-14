@@ -21,3 +21,18 @@ type PlantStore interface {
 	GetPlant(ctx context.Context, id string) (*PlantEntry, error)
 	DeletePlant(ctx context.Context, id string) error
 }
+
+// AppSettings holds the active AI backend selection and encrypted credentials.
+type AppSettings struct {
+	ActiveBackend string // "anthropic" | "gemini" | "ollama" | ""
+	AnthropicKey  string // encrypted at rest, empty if unset
+	GeminiKey     string // encrypted at rest, empty if unset
+	OllamaBaseURL string // plaintext URL
+	OllamaModel   string // e.g. "llava"
+}
+
+// SettingsStore is the interface for persisting app configuration.
+type SettingsStore interface {
+	GetSettings(ctx context.Context) (*AppSettings, error)
+	SaveSettings(ctx context.Context, s AppSettings) error
+}

@@ -163,3 +163,74 @@ func TestSQLiteStore_GeneratesIDIfEmpty(t *testing.T) {
 		t.Error("expected a generated ID, got empty string")
 	}
 }
+
+// --- settings ---
+
+func TestSQLiteStore_GetSettings_Defaults(t *testing.T) {
+	s := openTestDB(t)
+
+	got, err := s.GetSettings(context.Background())
+	if err != nil {
+		t.Fatalf("GetSettings on empty DB: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected non-nil AppSettings, got nil")
+	}
+	if got.ActiveBackend != "" {
+		t.Errorf("expected empty ActiveBackend, got %q", got.ActiveBackend)
+	}
+	if got.OllamaModel != "llava" {
+		t.Errorf("expected default OllamaModel 'llava', got %q", got.OllamaModel)
+	}
+}
+
+func TestSQLiteStore_SaveAndGetSettings(t *testing.T) {
+	s := openTestDB(t)
+	ctx := context.Background()
+
+	in := AppSettings{
+		ActiveBackend: "gemini",
+		GeminiKey:     "encrypted-key-value",
+		OllamaModel:   "llava",
+	}
+	if err := s.SaveSettings(ctx, in); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+
+	got, err := s.GetSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if got.ActiveBackend != "gemini" {
+		t.Errorf("ActiveBackend: got %q, want %q", got.ActiveBackend, "gemini")
+	}
+	if got.GeminiKey != "encrypted-key-value" {
+		t.Errorf("GeminiKey: got %q, want %q", got.GeminiKey, "encrypted-key-value")
+	}
+}
+
+func TestSQLiteStore_SaveSettings_Upsert(t *testing.T) {
+	s := openTestDB(t)
+	ctx := context.Background()
+
+	first := AppSettings{ActiveBackend: "anthropic", AnthropicKey: "key1"}
+	if err := s.SaveSettings(ctx, first); err != nil {
+		t.Fatalf("first SaveSettings: %v", err)
+	}
+
+	second := AppSettings{ActiveBackend: "gemini", GeminiKey: "key2"}
+	if err := s.SaveSettings(ctx, second); err != nil {
+		t.Fatalf("second SaveSettings: %v", err)
+	}
+
+	got, err := s.GetSettings(ctx)
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if got.ActiveBackend != "gemini" {
+		t.Errorf("expected upserted ActiveBackend 'gemini', got %q", got.ActiveBackend)
+	}
+	if got.AnthropicKey != "" {
+		t.Errorf("expected AnthropicKey cleared by upsert, got %q", got.AnthropicKey)
+	}
+}

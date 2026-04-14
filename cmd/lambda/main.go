@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 
-	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/handlers"
 	"github.com/dablotz/plantcare/internal/middleware"
 	"github.com/dablotz/plantcare/internal/store"
@@ -26,11 +25,10 @@ func main() {
 
 	ctx := context.Background()
 
-	apiKey := envOr("ANTHROPIC_API_KEY", "")
-	if apiKey == "" {
-		logger.Warn("ANTHROPIC_API_KEY not set — plant identification will fail")
+	encryptionKey := envOr("ENCRYPTION_KEY", "")
+	if encryptionKey == "" {
+		logger.Warn("ENCRYPTION_KEY not set — API keys will be stored unencrypted")
 	}
-	aiClient := anthropic.New(apiKey)
 
 	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 	if err != nil {
@@ -43,11 +41,13 @@ func main() {
 	s3Client   := s3.NewFromConfig(cfg)
 
 	h := &handlers.Handler{
-		Bedrock:      aiClient,
-		Store:        plantStore,
-		S3Client:     s3Client,
-		UploadBucket: uploadBucket,
-		Logger:       logger,
+		SettingsStore: nil, // DynamoDB path: settings not supported, falls back to env vars
+		EncryptionKey: encryptionKey,
+		IsLambda:      true,
+		Store:         plantStore,
+		S3Client:      s3Client,
+		UploadBucket:  uploadBucket,
+		Logger:        logger,
 	}
 
 	apiMux := http.NewServeMux()

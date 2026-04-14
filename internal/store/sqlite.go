@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS plants (
     id         TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
     care_plan  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    active_backend  TEXT NOT NULL DEFAULT '',
+    anthropic_key   TEXT NOT NULL DEFAULT '',
+    gemini_key      TEXT NOT NULL DEFAULT '',
+    ollama_base_url TEXT NOT NULL DEFAULT '',
+    ollama_model    TEXT NOT NULL DEFAULT 'llava'
 )`
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		_ = db.Close()
@@ -106,6 +114,44 @@ func (s *SQLiteStore) GetPlant(ctx context.Context, id string) (*PlantEntry, err
 func (s *SQLiteStore) DeletePlant(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM plants WHERE id = ?`, id)
 	return err
+}
+
+func (s *SQLiteStore) GetSettings(ctx context.Context) (*AppSettings, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT active_backend, anthropic_key, gemini_key, ollama_base_url, ollama_model
+		 FROM settings WHERE id = 1`)
+	var settings AppSettings
+	err := row.Scan(
+		&settings.ActiveBackend,
+		&settings.AnthropicKey,
+		&settings.GeminiKey,
+		&settings.OllamaBaseURL,
+		&settings.OllamaModel,
+	)
+	if err == sql.ErrNoRows {
+		return &AppSettings{OllamaModel: "llava"}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading settings: %w", err)
+	}
+	return &settings, nil
+}
+
+func (s *SQLiteStore) SaveSettings(ctx context.Context, settings AppSettings) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO settings
+		 (id, active_backend, anthropic_key, gemini_key, ollama_base_url, ollama_model)
+		 VALUES (1, ?, ?, ?, ?, ?)`,
+		settings.ActiveBackend,
+		settings.AnthropicKey,
+		settings.GeminiKey,
+		settings.OllamaBaseURL,
+		settings.OllamaModel,
+	)
+	if err != nil {
+		return fmt.Errorf("saving settings: %w", err)
+	}
+	return nil
 }
 
 // scanEntry reads a row using the provided scan function.

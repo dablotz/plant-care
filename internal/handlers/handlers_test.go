@@ -17,13 +17,13 @@ import (
 	"github.com/dablotz/plantcare/internal/store"
 )
 
-// mockBedrock is a test double for PlantIdentifier.
-type mockBedrock struct {
+// mockAI is a test double for PlantIdentifier.
+type mockAI struct {
 	plan *models.CarePlan
 	err  error
 }
 
-func (m *mockBedrock) IdentifyAndPlan(_ context.Context, _ models.PlantIdentifyRequest) (*models.CarePlan, error) {
+func (m *mockAI) IdentifyAndPlan(_ context.Context, _ models.PlantIdentifyRequest) (*models.CarePlan, error) {
 	return m.plan, m.err
 }
 
@@ -63,8 +63,8 @@ func (m *mockStore) DeletePlant(_ context.Context, id string) error {
 
 func newTestHandler(mock PlantIdentifier) (*Handler, *http.ServeMux) {
 	h := &Handler{
-		Bedrock: mock,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		backendOverride: mock,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -73,9 +73,9 @@ func newTestHandler(mock PlantIdentifier) (*Handler, *http.ServeMux) {
 
 func newTestHandlerWithStore(mock PlantIdentifier, s store.PlantStore) (*Handler, *http.ServeMux) {
 	h := &Handler{
-		Bedrock: mock,
-		Store:   s,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		backendOverride: mock,
+		Store:           s,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -243,7 +243,7 @@ func TestHandleGoogleLinks_InvalidDate(t *testing.T) {
 // --- /api/identify ---
 
 func TestHandleIdentify_ValidJSON(t *testing.T) {
-	mock := &mockBedrock{
+	mock := &mockAI{
 		plan: &models.CarePlan{
 			PlantName: "Monstera deliciosa",
 			Schedule:  []models.CareScheduleItem{{Task: "Watering", FrequencyDays: 7}},
@@ -282,7 +282,7 @@ func TestHandleIdentify_MissingInput(t *testing.T) {
 }
 
 func TestHandleIdentify_BedrockError(t *testing.T) {
-	mock := &mockBedrock{err: errors.New("service unavailable")}
+	mock := &mockAI{err: errors.New("service unavailable")}
 	_, mux := newTestHandler(mock)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/identify", strings.NewReader(`{"name":"Monstera"}`))

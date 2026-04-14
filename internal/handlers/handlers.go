@@ -8,13 +8,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/calendar"
+	"github.com/dablotz/plantcare/internal/gemini"
 	"github.com/dablotz/plantcare/internal/models"
+	"github.com/dablotz/plantcare/internal/ollama"
+	"github.com/dablotz/plantcare/internal/settings"
 	"github.com/dablotz/plantcare/internal/store"
 	"github.com/google/uuid"
 )
@@ -34,11 +39,16 @@ type PlantIdentifier interface {
 
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	Bedrock      PlantIdentifier
-	Store        store.PlantStore // nil if storage is not configured
-	S3Client     *s3.Client       // nil if S3 upload not configured
-	UploadBucket string
-	Logger       *slog.Logger
+	SettingsStore store.SettingsStore // nil falls back to env var
+	EncryptionKey string              // base64-encoded 32-byte key; empty = no encryption
+	IsLambda      bool
+	Store         store.PlantStore // nil if storage is not configured
+	S3Client      *s3.Client       // nil if S3 upload not configured
+	UploadBucket  string
+	Logger        *slog.Logger
+
+	// backendOverride bypasses resolveBackend; set only in tests.
+	backendOverride PlantIdentifier
 }
 
 // RegisterRoutes wires up all routes to the provided mux.
@@ -56,6 +66,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/plants",         h.handleListPlants)
 	mux.HandleFunc("GET /api/plants/{id}",    h.handleGetPlant)
 	mux.HandleFunc("DELETE /api/plants/{id}", h.handleDeletePlant)
+	mux.HandleFunc("GET /api/settings",       h.handleGetSettings)
+	mux.HandleFunc("POST /api/settings",      h.handleSaveSettings)
 }
 
 // handleConfig returns frontend configuration flags.
@@ -64,7 +76,162 @@ func (h *Handler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if h.S3Client != nil && h.UploadBucket != "" {
 		mode = "s3"
 	}
-	jsonOK(w, map[string]string{"image_upload_mode": mode})
+	jsonOK(w, map[string]any{
+		"image_upload_mode": mode,
+		"ollama_available":  !h.IsLambda,
+	})
+}
+
+// resolveBackend reads settings from the store and constructs the appropriate
+// PlantIdentifier for this request. Falls back to the ANTHROPIC_API_KEY env var
+// if no backend is configured.
+func (h *Handler) resolveBackend(ctx context.Context) (PlantIdentifier, error) {
+	if h.backendOverride != nil {
+		return h.backendOverride, nil
+	}
+	var s store.AppSettings
+	if h.SettingsStore != nil {
+		got, err := h.SettingsStore.GetSettings(ctx)
+		if err != nil {
+			h.Logger.Warn("reading settings failed, falling back to env var", "error", err)
+		} else if got != nil {
+			s = *got
+		}
+	}
+
+	switch s.ActiveBackend {
+	case "anthropic":
+		key := s.AnthropicKey
+		if key != "" {
+			decrypted, err := settings.Decrypt(key, h.EncryptionKey)
+			if err != nil {
+				return nil, fmt.Errorf("decrypting Anthropic key: %w", err)
+			}
+			key = decrypted
+		}
+		if key == "" {
+			key = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		return anthropic.New(key), nil
+	case "gemini":
+		key := s.GeminiKey
+		if key != "" {
+			decrypted, err := settings.Decrypt(key, h.EncryptionKey)
+			if err != nil {
+				return nil, fmt.Errorf("decrypting Gemini key: %w", err)
+			}
+			key = decrypted
+		}
+		if key == "" {
+			key = os.Getenv("GEMINI_API_KEY")
+		}
+		return gemini.New(key), nil
+	case "ollama":
+		if h.IsLambda {
+			return nil, fmt.Errorf("ollama is not available in cloud deployments")
+		}
+		baseURL := s.OllamaBaseURL
+		model := s.OllamaModel
+		return ollama.New(baseURL, model), nil
+	default:
+		// No backend configured — fall back to Anthropic via env var.
+		return anthropic.New(os.Getenv("ANTHROPIC_API_KEY")), nil
+	}
+}
+
+// handleGetSettings returns the current settings state without exposing plaintext keys.
+func (h *Handler) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	if h.SettingsStore == nil {
+		jsonOK(w, map[string]any{
+			"active_backend":       "",
+			"anthropic_configured": false,
+			"gemini_configured":    false,
+			"ollama_configured":    false,
+			"ollama_available":     !h.IsLambda,
+		})
+		return
+	}
+
+	s, err := h.SettingsStore.GetSettings(r.Context())
+	if err != nil {
+		h.jsonInternalError(w, "failed to read settings", err)
+		return
+	}
+
+	jsonOK(w, map[string]any{
+		"active_backend":       s.ActiveBackend,
+		"anthropic_configured": s.AnthropicKey != "",
+		"gemini_configured":    s.GeminiKey != "",
+		"ollama_configured":    s.OllamaBaseURL != "",
+		"ollama_available":     !h.IsLambda,
+	})
+}
+
+// handleSaveSettings validates and persists backend settings.
+func (h *Handler) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
+	if h.SettingsStore == nil {
+		jsonError(w, "settings storage not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+	var req struct {
+		ActiveBackend string `json:"active_backend"`
+		AnthropicKey  string `json:"anthropic_key"`
+		GeminiKey     string `json:"gemini_key"`
+		OllamaBaseURL string `json:"ollama_base_url"`
+		OllamaModel   string `json:"ollama_model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.ActiveBackend == "ollama" && h.IsLambda {
+		jsonError(w, "ollama is not available in cloud deployments", http.StatusBadRequest)
+		return
+	}
+
+	// Load existing settings so we only overwrite fields that were provided.
+	existing, err := h.SettingsStore.GetSettings(r.Context())
+	if err != nil {
+		h.jsonInternalError(w, "failed to read settings", err)
+		return
+	}
+
+	s := *existing
+	if req.ActiveBackend != "" {
+		s.ActiveBackend = req.ActiveBackend
+	}
+	if req.AnthropicKey != "" {
+		encrypted, err := settings.Encrypt(req.AnthropicKey, h.EncryptionKey)
+		if err != nil {
+			h.jsonInternalError(w, "failed to encrypt Anthropic key", err)
+			return
+		}
+		s.AnthropicKey = encrypted
+	}
+	if req.GeminiKey != "" {
+		encrypted, err := settings.Encrypt(req.GeminiKey, h.EncryptionKey)
+		if err != nil {
+			h.jsonInternalError(w, "failed to encrypt Gemini key", err)
+			return
+		}
+		s.GeminiKey = encrypted
+	}
+	if req.OllamaBaseURL != "" {
+		s.OllamaBaseURL = req.OllamaBaseURL
+	}
+	if req.OllamaModel != "" {
+		s.OllamaModel = req.OllamaModel
+	}
+
+	if err := h.SettingsStore.SaveSettings(r.Context(), s); err != nil {
+		h.jsonInternalError(w, "failed to save settings", err)
+		return
+	}
+
+	jsonOK(w, map[string]string{"status": "ok"})
 }
 
 // handleUploadURL returns a pre-signed S3 PUT URL and object key for a direct browser upload.
@@ -194,7 +361,13 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 
 	h.Logger.Info("identify request", "has_image", req.ImageBase64 != "")
 
-	plan, err := h.Bedrock.IdentifyAndPlan(r.Context(), req)
+	backend, err := h.resolveBackend(r.Context())
+	if err != nil {
+		h.jsonInternalError(w, "failed to resolve AI backend", err)
+		return
+	}
+
+	plan, err := backend.IdentifyAndPlan(r.Context(), req)
 	if err != nil {
 		h.jsonInternalError(w, "plant identification failed", err)
 		return

@@ -10,7 +10,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/handlers"
 	"github.com/dablotz/plantcare/internal/middleware"
 	"github.com/dablotz/plantcare/internal/store"
@@ -28,13 +27,15 @@ func main() {
 
 	logger.Info("starting plantcare server", "port", port, "aws_region", region)
 
-	apiKey := envOr("ANTHROPIC_API_KEY", "")
-	if apiKey == "" {
-		logger.Warn("ANTHROPIC_API_KEY not set — plant identification will fail")
+	encryptionKey := envOr("ENCRYPTION_KEY", "")
+	if encryptionKey == "" {
+		logger.Warn("ENCRYPTION_KEY not set — API keys will be stored unencrypted")
 	}
-	aiClient := anthropic.New(apiKey)
+
+	isLambda := os.Getenv("AWS_LAMBDA_FUNCTION_NAME") != ""
 
 	var plantStore store.PlantStore
+	var settingsStore store.SettingsStore
 	var s3Client *s3.Client
 	uploadBucket := envOr("UPLOAD_BUCKET", "")
 
@@ -47,6 +48,7 @@ func main() {
 			os.Exit(1)
 		}
 		plantStore = s
+		settingsStore = s
 		logger.Info("using SQLite store", "path", sqlitePath)
 	case "dynamodb":
 		cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
@@ -67,11 +69,13 @@ func main() {
 	}
 
 	h := &handlers.Handler{
-		Bedrock:      aiClient,
-		Store:        plantStore,
-		S3Client:     s3Client,
-		UploadBucket: uploadBucket,
-		Logger:       logger,
+		SettingsStore: settingsStore,
+		EncryptionKey: encryptionKey,
+		IsLambda:      isLambda,
+		Store:         plantStore,
+		S3Client:      s3Client,
+		UploadBucket:  uploadBucket,
+		Logger:        logger,
 	}
 
 	// API sub-mux: auth + rate limiting applied here only
