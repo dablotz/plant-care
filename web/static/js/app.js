@@ -318,6 +318,10 @@ googleLinksBtn.addEventListener('click', async () => {
 
     googleList.innerHTML = '';
     Object.entries(links).forEach(([task, url]) => {
+      // Guard against protocol injection — only allow https: URLs.
+      try {
+        if (new URL(url).protocol !== 'https:') return;
+      } catch { return; }
       const a = document.createElement('a');
       a.href    = url;
       a.target  = '_blank';

@@ -352,6 +352,10 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := validateForLLM(req.Name); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 
 	if req.Name == "" && req.ImageBase64 == "" {
@@ -370,6 +374,11 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 	plan, err := backend.IdentifyAndPlan(r.Context(), req)
 	if err != nil {
 		h.jsonInternalError(w, "plant identification failed", err)
+		return
+	}
+
+	if err := validateCarePlan(plan); err != nil {
+		h.jsonInternalError(w, "plant identification returned invalid data", err)
 		return
 	}
 
@@ -558,6 +567,104 @@ func validatePlantName(name string) error {
 			return fmt.Errorf("plant name contains invalid characters")
 		}
 	}
+	return nil
+}
+
+// validateForLLM rejects input that matches common prompt-injection patterns.
+// The error message is intentionally generic to avoid hinting at bypass strategies.
+func validateForLLM(name string) error {
+	lower := strings.ToLower(name)
+	injectionSignals := []string{
+		"ignore previous",
+		"ignore above",
+		"ignore all",
+		"disregard",
+		"forget your",
+		"new instructions",
+		"system prompt",
+		"you are now",
+		"act as",
+		"<|",
+		"[inst]",
+		"[/inst]",
+		"<<sys>>",
+		"assistant:",
+		"human:",
+		"### instruction",
+		"### system",
+	}
+	for _, signal := range injectionSignals {
+		if strings.Contains(lower, signal) {
+			return fmt.Errorf("plant name contains invalid content")
+		}
+	}
+	return nil
+}
+
+// validateCarePlan enforces field-length limits and numeric bounds on an
+// LLM-generated CarePlan before it is returned to the client.
+func validateCarePlan(plan *models.CarePlan) error {
+	const (
+		maxShort  = 300  // names and single-line fields
+		maxLong   = 2000 // summary, notes, tips
+		maxItems  = 20   // schedule items and pro tips
+		maxFreq   = 3650 // ~10 years in days
+	)
+
+	type shortField struct {
+		name  string
+		value string
+	}
+	short := []shortField{
+		{"plant_name", plan.PlantName},
+		{"common_name", plan.CommonName},
+		{"scientific_name", plan.ScientificName},
+		{"light", plan.Light},
+		{"humidity", plan.Humidity},
+		{"temperature", plan.Temperature},
+		{"soil_type", plan.SoilType},
+	}
+	for _, f := range short {
+		if len(f.value) > maxShort {
+			return fmt.Errorf("%s exceeds maximum length", f.name)
+		}
+	}
+	for _, f := range []shortField{
+		{"summary", plan.Summary},
+		{"toxicity_note", plan.ToxicityNote},
+	} {
+		if len(f.value) > maxLong {
+			return fmt.Errorf("%s exceeds maximum length", f.name)
+		}
+	}
+
+	if len(plan.ProTips) > maxItems {
+		return fmt.Errorf("too many pro_tips in response")
+	}
+	for i, tip := range plan.ProTips {
+		if len(tip) > maxLong {
+			return fmt.Errorf("pro_tips[%d] exceeds maximum length", i)
+		}
+	}
+
+	if len(plan.Schedule) > maxItems {
+		return fmt.Errorf("too many schedule items in response")
+	}
+	for i, item := range plan.Schedule {
+		if len(item.Task) > maxShort {
+			return fmt.Errorf("schedule[%d].task exceeds maximum length", i)
+		}
+		if item.FrequencyDays < 1 || item.FrequencyDays > maxFreq {
+			return fmt.Errorf("schedule[%d].frequency_days out of range (1–%d)", i, maxFreq)
+		}
+		if len(item.Notes) > maxLong {
+			return fmt.Errorf("schedule[%d].notes exceeds maximum length", i)
+		}
+		if len(item.SeasonalNote) > maxLong {
+			return fmt.Errorf("schedule[%d].seasonal_note exceeds maximum length", i)
+		}
+	}
+
 	return nil
 }
 
