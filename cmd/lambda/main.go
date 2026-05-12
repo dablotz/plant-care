@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 
+	"github.com/dablotz/plantcare/internal/gbif"
 	"github.com/dablotz/plantcare/internal/handlers"
 	"github.com/dablotz/plantcare/internal/middleware"
 	"github.com/dablotz/plantcare/internal/store"
@@ -48,6 +49,7 @@ func main() {
 		S3Client:      s3Client,
 		UploadBucket:  uploadBucket,
 		Logger:        logger,
+		GBIFClient:    gbif.New(),
 	}
 
 	apiMux := http.NewServeMux()
