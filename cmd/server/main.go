@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/dablotz/plantcare/internal/gbif"
 	"github.com/dablotz/plantcare/internal/handlers"
 	"github.com/dablotz/plantcare/internal/middleware"
 	"github.com/dablotz/plantcare/internal/store"
@@ -76,6 +77,7 @@ func main() {
 		S3Client:      s3Client,
 		UploadBucket:  uploadBucket,
 		Logger:        logger,
+		GBIFClient:    gbif.New(),
 	}
 
 	// API sub-mux: auth + rate limiting applied here only

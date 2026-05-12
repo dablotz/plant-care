@@ -60,7 +60,8 @@ The JSON must conform exactly to this schema:
 }
 Schedule must include at minimum: Watering, Fertilizing, and Repotting tasks.
 Include Misting if the plant benefits from it. Include Pruning if applicable.
-frequency_days must be a positive integer (e.g. water every 7 days = 7).`
+frequency_days must be an integer of at least 1 — never use 0 or a negative value (e.g. water every 7 days = 7, repot every 365 days = 365).
+If the input is not a recognizable houseplant (gibberish, an animal, a non-plant object, or a name you cannot confidently identify), respond with ONLY: {"error": "brief reason"}`
 
 	var parts []sdk.ContentBlockParamUnion
 
@@ -110,10 +111,16 @@ frequency_days must be a positive integer (e.g. water every 7 days = 7).`
 	rawJSON = strings.TrimSuffix(rawJSON, "```")
 	rawJSON = strings.TrimSpace(rawJSON)
 
-	var plan models.CarePlan
-	if err := json.Unmarshal([]byte(rawJSON), &plan); err != nil {
+	var raw struct {
+		models.CarePlan
+		ModelError string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
 		return nil, fmt.Errorf("parsing care plan JSON from model: %w", err)
 	}
+	if raw.ModelError != "" {
+		return nil, &models.IdentifyError{Message: raw.ModelError}
+	}
 
-	return &plan, nil
+	return &raw.CarePlan, nil
 }

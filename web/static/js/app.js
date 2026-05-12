@@ -476,15 +476,137 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+/* ── Settings Modal ──────────────────────────────────── */
+const settingsBtn      = document.getElementById('settings-btn');
+const settingsOverlay  = document.getElementById('settings-overlay');
+const settingsClose    = document.getElementById('settings-close');
+const settingsCancel   = document.getElementById('settings-cancel');
+const settingsSave     = document.getElementById('settings-save');
+const backendSelect    = document.getElementById('backend-select');
+const settingsError    = document.getElementById('settings-error');
+const settingsSuccess  = document.getElementById('settings-success');
+const sectionAnthropic = document.getElementById('settings-anthropic');
+const sectionGemini    = document.getElementById('settings-gemini');
+const sectionOllama    = document.getElementById('settings-ollama');
+
+function openSettings() {
+  settingsOverlay.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSettings() {
+  settingsOverlay.classList.add('hidden');
+  document.body.style.overflow = '';
+  hideError(settingsError);
+  settingsSuccess.classList.add('hidden');
+}
+
+function showBackendSection(backend) {
+  sectionAnthropic.classList.toggle('hidden', backend !== 'anthropic');
+  sectionGemini.classList.toggle('hidden', backend !== 'gemini');
+  sectionOllama.classList.toggle('hidden', backend !== 'ollama');
+}
+
+backendSelect.addEventListener('change', () => showBackendSection(backendSelect.value));
+settingsBtn.addEventListener('click', () => { loadSettings(); openSettings(); });
+settingsClose.addEventListener('click', closeSettings);
+settingsCancel.addEventListener('click', closeSettings);
+settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) closeSettings(); });
+
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const s = await handleAPIResponse(res);
+
+    const ollamaOption = backendSelect.querySelector('option[value="ollama"]');
+    if (ollamaOption) ollamaOption.hidden = !s.ollama_available;
+
+    backendSelect.value = s.active_backend || '';
+    showBackendSection(s.active_backend || '');
+
+    document.getElementById('anthropic-hint').textContent =
+      s.anthropic_configured ? '✓ API key already saved' : '';
+    document.getElementById('gemini-hint').textContent =
+      s.gemini_configured ? '✓ API key already saved' : '';
+
+    return s;
+  } catch (_) {
+    return null;
+  }
+}
+
+settingsSave.addEventListener('click', async () => {
+  hideError(settingsError);
+  settingsSuccess.classList.add('hidden');
+
+  const backend = backendSelect.value;
+  if (!backend) {
+    showError(settingsError, 'Please select a backend.');
+    return;
+  }
+
+  const body = { active_backend: backend };
+  if (backend === 'anthropic') {
+    const key = document.getElementById('anthropic-key').value.trim();
+    if (key) body.anthropic_key = key;
+  } else if (backend === 'gemini') {
+    const key = document.getElementById('gemini-key').value.trim();
+    if (key) body.gemini_key = key;
+  } else if (backend === 'ollama') {
+    const url = document.getElementById('ollama-url').value.trim();
+    const model = document.getElementById('ollama-model').value.trim();
+    if (url) body.ollama_base_url = url;
+    if (model) body.ollama_model = model;
+  }
+
+  setLoading(settingsSave, true);
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    await handleAPIResponse(res);
+    settingsSuccess.classList.remove('hidden');
+    updateFooter(backend);
+    document.getElementById('anthropic-key').value = '';
+    document.getElementById('gemini-key').value = '';
+    await loadSettings();
+    setTimeout(closeSettings, 1200);
+  } catch (err) {
+    showError(settingsError, err.message);
+  } finally {
+    setLoading(settingsSave, false);
+  }
+});
+
+function updateFooter(activeBackend) {
+  const el = document.getElementById('footer-status');
+  if (!el) return;
+  const labels = {
+    anthropic: 'Anthropic · Claude Haiku',
+    gemini:    'Google Gemini',
+    ollama:    'Ollama (local)',
+  };
+  el.textContent = labels[activeBackend]
+    ? `Powered by ${labels[activeBackend]} · Self-hosted`
+    : 'Self-hosted · PlantCare · open settings to configure a backend';
+}
+
 /* ── Init ────────────────────────────────────────── */
 async function init() {
-  try {
-    const res = await fetch('/api/config');
-    const cfg = await res.json();
-    if (cfg.image_upload_mode) imageUploadMode = cfg.image_upload_mode;
-  } catch (_) {
-    // keep default 'direct'
-  }
+  const [configResult, settingsResult] = await Promise.allSettled([
+    fetch('/api/config').then(r => r.json()).catch(() => ({})),
+    loadSettings(),
+  ]);
+
+  const cfg = configResult.status === 'fulfilled' ? configResult.value : {};
+  if (cfg.image_upload_mode) imageUploadMode = cfg.image_upload_mode;
+
+  const s = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+  updateFooter(s?.active_backend || '');
+  if (!s?.active_backend) openSettings();
+
   loadLibrary();
 }
 

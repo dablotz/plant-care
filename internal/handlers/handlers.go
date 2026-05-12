@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dablotz/plantcare/internal/anthropic"
 	"github.com/dablotz/plantcare/internal/calendar"
+	"github.com/dablotz/plantcare/internal/gbif"
 	"github.com/dablotz/plantcare/internal/gemini"
 	"github.com/dablotz/plantcare/internal/models"
 	"github.com/dablotz/plantcare/internal/ollama"
@@ -46,9 +48,15 @@ type Handler struct {
 	S3Client      *s3.Client       // nil if S3 upload not configured
 	UploadBucket  string
 	Logger        *slog.Logger
+	GBIFClient    GBIFLookup // nil disables name validation
 
 	// backendOverride bypasses resolveBackend; set only in tests.
 	backendOverride PlantIdentifier
+}
+
+// GBIFLookup is the interface for plant name validation via GBIF.
+type GBIFLookup interface {
+	Lookup(ctx context.Context, name string) (*gbif.Match, error)
 }
 
 // RegisterRoutes wires up all routes to the provided mux.
@@ -365,6 +373,19 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 
 	h.Logger.Info("identify request", "has_image", req.ImageBase64 != "")
 
+	if req.Name != "" && req.ImageBase64 == "" && h.GBIFClient != nil {
+		match, err := h.GBIFClient.Lookup(r.Context(), req.Name)
+		if err != nil {
+			h.Logger.Warn("GBIF lookup failed, proceeding without validation", "error", err)
+		} else if match == nil {
+			jsonError(w, "Plant not recognized — check the name and try again", http.StatusUnprocessableEntity)
+			return
+		} else {
+			h.Logger.Info("GBIF match", "query", req.Name, "canonical", match.CanonicalName, "confidence", match.Confidence)
+			req.Name = match.CanonicalName
+		}
+	}
+
 	backend, err := h.resolveBackend(r.Context())
 	if err != nil {
 		h.jsonInternalError(w, "failed to resolve AI backend", err)
@@ -373,9 +394,16 @@ func (h *Handler) handleIdentify(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := backend.IdentifyAndPlan(r.Context(), req)
 	if err != nil {
+		var idErr *models.IdentifyError
+		if errors.As(err, &idErr) {
+			jsonError(w, "Plant not recognized — check the name and try again", http.StatusUnprocessableEntity)
+			return
+		}
 		h.jsonInternalError(w, "plant identification failed", err)
 		return
 	}
+
+	h.sanitizeSchedule(plan)
 
 	if err := validateCarePlan(plan); err != nil {
 		h.jsonInternalError(w, "plant identification returned invalid data", err)
@@ -601,14 +629,30 @@ func validateForLLM(name string) error {
 	return nil
 }
 
+// sanitizeSchedule drops schedule items with an out-of-range frequency_days
+// and logs a warning for each one. A bad item from the model should not cause
+// the whole response to fail.
+func (h *Handler) sanitizeSchedule(plan *models.CarePlan) {
+	const maxFreq = 3650
+	kept := plan.Schedule[:0]
+	for _, item := range plan.Schedule {
+		if item.FrequencyDays < 1 || item.FrequencyDays > maxFreq {
+			h.Logger.Warn("dropping schedule item with invalid frequency_days",
+				"task", item.Task, "frequency_days", item.FrequencyDays)
+			continue
+		}
+		kept = append(kept, item)
+	}
+	plan.Schedule = kept
+}
+
 // validateCarePlan enforces field-length limits and numeric bounds on an
 // LLM-generated CarePlan before it is returned to the client.
 func validateCarePlan(plan *models.CarePlan) error {
 	const (
-		maxShort  = 300  // names and single-line fields
-		maxLong   = 2000 // summary, notes, tips
-		maxItems  = 20   // schedule items and pro tips
-		maxFreq   = 3650 // ~10 years in days
+		maxShort = 300  // names and single-line fields
+		maxLong  = 2000 // summary, notes, tips
+		maxItems = 20   // schedule items and pro tips
 	)
 
 	type shortField struct {
@@ -653,9 +697,6 @@ func validateCarePlan(plan *models.CarePlan) error {
 	for i, item := range plan.Schedule {
 		if len(item.Task) > maxShort {
 			return fmt.Errorf("schedule[%d].task exceeds maximum length", i)
-		}
-		if item.FrequencyDays < 1 || item.FrequencyDays > maxFreq {
-			return fmt.Errorf("schedule[%d].frequency_days out of range (1–%d)", i, maxFreq)
 		}
 		if len(item.Notes) > maxLong {
 			return fmt.Errorf("schedule[%d].notes exceeds maximum length", i)

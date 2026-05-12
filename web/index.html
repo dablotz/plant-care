@@ -22,6 +22,7 @@
       <span class="logo-text">PlantCare</span>
     </div>
     <p class="tagline">Identify any houseplant &amp; build its care calendar</p>
+    <button class="btn-settings" id="settings-btn" aria-label="Backend settings" title="Backend settings">⚙</button>
   </header>
 
   <main>
@@ -165,8 +166,66 @@
   </main>
 
   <footer>
-    <p>Powered by AWS Bedrock · Claude 3 Sonnet · Self-hosted</p>
+    <p id="footer-status">Self-hosted · PlantCare</p>
   </footer>
+
+  <!-- ── Settings Modal ── -->
+  <div class="modal-overlay hidden" id="settings-overlay">
+    <div class="modal" id="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="modal-header">
+        <h2 id="settings-title">Backend Settings</h2>
+        <button class="modal-close" id="settings-close" aria-label="Close">✕</button>
+      </div>
+
+      <div class="field">
+        <label for="backend-select">AI Backend</label>
+        <select id="backend-select">
+          <option value="">— select a backend —</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="gemini">Google Gemini</option>
+          <option value="ollama">Ollama (Local)</option>
+        </select>
+      </div>
+
+      <div id="settings-anthropic" class="hidden">
+        <div class="field">
+          <label for="anthropic-key">Anthropic API Key</label>
+          <input type="password" id="anthropic-key" placeholder="sk-ant-…" autocomplete="off" />
+          <p class="settings-hint" id="anthropic-hint"></p>
+        </div>
+      </div>
+
+      <div id="settings-gemini" class="hidden">
+        <div class="field">
+          <label for="gemini-key">Gemini API Key</label>
+          <input type="password" id="gemini-key" placeholder="AIza…" autocomplete="off" />
+          <p class="settings-hint" id="gemini-hint"></p>
+        </div>
+      </div>
+
+      <div id="settings-ollama" class="hidden">
+        <div class="field">
+          <label for="ollama-url">Ollama Base URL</label>
+          <input type="text" id="ollama-url" placeholder="http://localhost:11434" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label for="ollama-model">Model</label>
+          <input type="text" id="ollama-model" placeholder="llava" autocomplete="off" />
+        </div>
+      </div>
+
+      <div id="settings-error" class="error-msg hidden"></div>
+      <div id="settings-success" class="save-toast hidden">Settings saved.</div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" id="settings-cancel">Cancel</button>
+        <button class="btn-primary" id="settings-save">
+          <span class="btn-text">Save Settings</span>
+          <span class="btn-spinner hidden"></span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/js/app.js"></script>
 </body>

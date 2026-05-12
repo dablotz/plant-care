@@ -17,6 +17,12 @@ type CareScheduleItem struct {
 	SeasonalNote    string `json:"seasonal_note,omitempty"`
 }
 
+// IdentifyError is returned by plant identifier backends when the model
+// reports it cannot identify the provided plant name or image.
+type IdentifyError struct{ Message string }
+
+func (e *IdentifyError) Error() string { return e.Message }
+
 // CarePlan is the structured response from Bedrock.
 type CarePlan struct {
 	PlantName       string             `json:"plant_name"`
