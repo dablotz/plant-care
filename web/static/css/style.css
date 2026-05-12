@@ -561,17 +561,22 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   position: absolute;
   top: 1.5rem;
   right: 1.5rem;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: var(--surface2);
+  border: 1px solid var(--border2);
   border-radius: var(--radius);
-  color: var(--text-dim);
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  font-weight: 500;
   line-height: 1;
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.85rem;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
 }
-.btn-settings:hover { border-color: var(--border2); color: var(--text-muted); }
+.btn-settings:hover { border-color: var(--green-dim); color: var(--text); background: var(--surface); }
 
 /* ── Modal ───────────────────────────────────── */
 .modal-overlay {
